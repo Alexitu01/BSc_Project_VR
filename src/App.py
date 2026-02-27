@@ -1,6 +1,7 @@
 import sys
 from tkinter.font import Font
 from PySide6.QtWidgets import *
+from PySide6.QtWidgets import QHeaderView, QAbstractItemView
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFont, QPalette
 class MainWindow(QMainWindow):
@@ -9,7 +10,7 @@ class MainWindow(QMainWindow):
         self.resize(900,600)
         self.setWindowTitle("App")
         self.windowTracker = []
-        self.setStyleSheet('background-color: blue')
+        self.setStyleSheet('background-color: #C0C0C0')
         
 
         
@@ -84,11 +85,29 @@ class FilePage(QWidget):
         font = QFont('', 24)
         label.setFont(font)
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        
-        
+        Table = QTableWidget(10, 5)
+        Table.setStyleSheet('background-color: grey')
+        Table.setHorizontalHeaderLabels(["Name", "Created", "Size", "Type", "Download"])
+        Table.setSizePolicy(QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum))
+        Table.setFixedHeight(300)
+
+        header = Table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+
         layout = QVBoxLayout()
         layout.addWidget(label)
+        layout.addWidget(Table)
+        center = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+        layout.setAlignment(center)
+
         self.setLayout(layout)
+
+
+
 
 
         
