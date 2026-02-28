@@ -7,10 +7,14 @@ from PySide6.QtGui import QFont, QPalette
 class MainWindow(QMainWindow):
     def __init__ (self):
         super().__init__() 
+
+        #Defines the relative size, name and color of the app window.
         self.resize(900,600)
         self.setWindowTitle("App")
-        self.windowTracker = []
         self.setStyleSheet('background-color: #C0C0C0')
+
+        #Stack to keep track of the 'endpoints' the user traverses to.
+        self.windowTracker = []
 
 
         
@@ -25,6 +29,7 @@ class MainWindow(QMainWindow):
         self.templates = TemplateClass()
         self.Ai = AiClass()
         
+        #Defines a dictionary to map strings to the instantiated pages.
         self.dictionary = {
             "create": self.creationPage,
             "files": self.filePage,
@@ -34,15 +39,18 @@ class MainWindow(QMainWindow):
 
         #Definition of buttons that will redirect.
         fileButton = QPushButton("Go to files")
-        fileButton.setStyleSheet('background-color: grey')
         createButton = QPushButton("Start creating")
-        createButton.setStyleSheet('background-color: grey')
         self.backButton = QPushButton("Go Back")
-        self.backButton.setStyleSheet('background-color: grey')
-
-        createButton.setFixedSize(100,100)
+        
+        #Set style and size of the buttons
+        fileButton.setStyleSheet('background-color: grey')
         fileButton.setFixedSize(100,100)
+        createButton.setStyleSheet('background-color: grey')
+        createButton.setFixedSize(100,100)
+        self.backButton.setStyleSheet('background-color: grey')
         self.backButton.setFixedSize(80,50)
+
+        
 
         #Connects the buttons the method that handles redirection
         fileButton.clicked.connect(lambda:self.goTo("files"))
@@ -71,13 +79,17 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.AllWindows)
         self.AllWindows.setCurrentWidget(self.mainPage)
 
-
+#Method for navigating to different pages.
+#Works by making the back-button visible (not the smartest way of doing it)
+#Append the current window to stack + change the current page to where the user is navigating to.
     def goTo(self, page):
         self.backButton.show()
         self.windowTracker.append(self.current)
         self.current = self.dictionary.get(page)
         self.AllWindows.setCurrentWidget(self.current)
     
+#Method for going back through the stack
+#Works by popping from the stack, and navigating to that popped page while updating the current page to that page.
     def goBack(self):
         currentWindow = self.windowTracker.pop()
         if(len(self.windowTracker) == 0):
@@ -93,13 +105,16 @@ class FilePage(QWidget):
         label.setText("Welcome to the file page")
         font = QFont('', 24)
         label.setFont(font)
-        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter) #Centers
+
+        #Table for containing - in the future should be built from amount of files in a folder.
         Table = QTableWidget(10, 5)
         Table.setStyleSheet('background-color: grey')
-        Table.setHorizontalHeaderLabels(["Name", "Created", "Size", "Type", "Download"])
-        Table.setSizePolicy(QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum))
+        Table.setHorizontalHeaderLabels(["Name", "Created", "Size", "Type", "Download"]) #Set header values
+        Table.setSizePolicy(QSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Minimum)) #Some weird stuff about the table's size.
         Table.setFixedHeight(300)
 
+        #Make the headers stretch to fit.
         header = Table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -119,9 +134,6 @@ class FilePage(QWidget):
 
 
 
-        
-
-
 class CreatePage(QWidget):
     def __init__ (self, goTo):
         super().__init__()
@@ -131,9 +143,10 @@ class CreatePage(QWidget):
         label.setFont(font)
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         
+
         fromscratchButton = QPushButton("Create from Scratch")
-        fromscratchButton.setStyleSheet('background-color: grey')
         fromtempButton = QPushButton("Create from Templates")
+        fromscratchButton.setStyleSheet('background-color: grey')
         fromtempButton.setStyleSheet('background-color: grey')
         
 
@@ -158,6 +171,8 @@ class TemplateClass(QWidget):
         font = QFont('', 24)
         label.setFont(font)
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+        
         layout = QVBoxLayout()
         layout.addWidget(label)
         self.setLayout(layout)
@@ -171,6 +186,8 @@ class AiClass(QWidget):
         font = QFont('', 24)
         label.setFont(font)
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+
         layout = QVBoxLayout()
         layout.addWidget(label)
         self.setLayout(layout)
