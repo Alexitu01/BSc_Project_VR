@@ -11,16 +11,26 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("App")
         self.windowTracker = []
         self.setStyleSheet('background-color: #C0C0C0')
-        
+
 
         
         self.AllWindows = QStackedWidget() #Basically a container that keeps all the windows (widgets) for the application
         mainPageLayout = QHBoxLayout() #The layout for this page MainWindow.
         self.mainPage = QWidget() #The page in itself.
+        self.current = self.mainPage
 
         #Definition of different pages for the application:
         self.filePage = FilePage()
-        self.creationPage = CreatePage()
+        self.creationPage = CreatePage(self.goTo)
+        self.templates = TemplateClass()
+        self.Ai = AiClass()
+        
+        self.dictionary = {
+            "create": self.creationPage,
+            "files": self.filePage,
+            "templates": self.templates,
+            "ai": self.Ai,
+        }
 
         #Definition of buttons that will redirect.
         fileButton = QPushButton("Go to files")
@@ -35,8 +45,8 @@ class MainWindow(QMainWindow):
         self.backButton.setFixedSize(80,50)
 
         #Connects the buttons the method that handles redirection
-        fileButton.clicked.connect(self.goToFilePage)
-        createButton.clicked.connect(self.goToCreationPage)
+        fileButton.clicked.connect(lambda:self.goTo("files"))
+        createButton.clicked.connect(lambda:self.goTo("create"))
         self.backButton.clicked.connect(self.goBack)
         
         #Add the buttons to the layout
@@ -52,6 +62,8 @@ class MainWindow(QMainWindow):
         self.AllWindows.addWidget(self.mainPage)
         self.AllWindows.addWidget(self.filePage)
         self.AllWindows.addWidget(self.creationPage)
+        self.AllWindows.addWidget(self.templates)
+        self.AllWindows.addWidget(self.Ai)
 
         #Center the container, and make the current page the mainpage.
         self.setMenuWidget(self.backButton)
@@ -60,20 +72,17 @@ class MainWindow(QMainWindow):
         self.AllWindows.setCurrentWidget(self.mainPage)
 
 
-    def goToFilePage(self):
+    def goTo(self, page):
         self.backButton.show()
-        self.windowTracker.append(self.mainPage)
-        self.AllWindows.setCurrentWidget(self.filePage)
-
-    def goToCreationPage(self):
-        self.backButton.show()
-        self.windowTracker.append(self.mainPage)
-        self.AllWindows.setCurrentWidget(self.creationPage)
+        self.windowTracker.append(self.current)
+        self.current = self.dictionary.get(page)
+        self.AllWindows.setCurrentWidget(self.current)
     
     def goBack(self):
         currentWindow = self.windowTracker.pop()
         if(len(self.windowTracker) == 0):
             self.backButton.hide()
+        self.current = currentWindow
         self.AllWindows.setCurrentWidget(currentWindow)
 
 class FilePage(QWidget):
@@ -114,10 +123,38 @@ class FilePage(QWidget):
 
 
 class CreatePage(QWidget):
-    def __init__ (self):
+    def __init__ (self, goTo):
         super().__init__()
         label = QLabel()
         label.setText("Welcome to the Creation page")
+        font = QFont('', 24)
+        label.setFont(font)
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        
+        fromscratchButton = QPushButton("Create from Scratch")
+        fromscratchButton.setStyleSheet('background-color: grey')
+        fromtempButton = QPushButton("Create from Templates")
+        fromtempButton.setStyleSheet('background-color: grey')
+        
+
+        fromscratchButton.clicked.connect(lambda:goTo("ai"))
+        fromtempButton.clicked.connect(lambda:goTo("templates"))
+
+
+        layout = QVBoxLayout()
+        layout.addWidget(label)
+        layout.addWidget(fromscratchButton)
+        layout.addWidget(fromtempButton)
+        self.setLayout(layout)
+
+
+
+
+class TemplateClass(QWidget):
+    def __init__ (self):
+        super().__init__()
+        label = QLabel()
+        label.setText("Welcome to the Template Page")
         font = QFont('', 24)
         label.setFont(font)
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -126,8 +163,17 @@ class CreatePage(QWidget):
         self.setLayout(layout)
 
 
-
-        
+class AiClass(QWidget):
+    def __init__ (self):
+        super().__init__()
+        label = QLabel()
+        label.setText("Welcome to the Ai Page")
+        font = QFont('', 24)
+        label.setFont(font)
+        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout = QVBoxLayout()
+        layout.addWidget(label)
+        self.setLayout(layout)
 
 app = QApplication(sys.argv)
 QTimer.singleShot(30_000, app.quit)
