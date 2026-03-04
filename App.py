@@ -1,7 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-import uvicorn
 
 app = FastAPI()
 app.mount("/FrontEnd", StaticFiles(directory="FrontEnd"), name="FrontEnd")
@@ -15,7 +14,17 @@ def index():
 def creation():
     path = "./FrontEnd/Pages/CreationPage.html"
 
-    
+
     return FileResponse(path)
 
-# uvicorn App:app --reload
+@app.post("/CreationPage")
+async def read_item_via_request_body(request: Request):
+    promptForAi = await request.json()
+    data = promptForAi["text"]
+    print(data)
+    return data
+
+
+
+
+# start application with: uvicorn App:app --reload
