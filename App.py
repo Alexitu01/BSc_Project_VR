@@ -11,5 +11,11 @@ def index():
     path = "./FrontEnd/Pages/FrontPage.html"
     return FileResponse(path)
 
+@app.get('/CreationPage')
+def creation():
+    path = "./FrontEnd/Pages/CreationPage.html"
+
+    
+    return FileResponse(path)
 
 # uvicorn App:app --reload
