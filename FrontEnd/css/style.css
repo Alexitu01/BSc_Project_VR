@@ -7,16 +7,100 @@ body{
     display: flex;
     justify-content: center;
     background-color: rgba(82, 76, 76, 0.472);
-    color: black;
     width: 100%;
     height: 100%;
     padding: 0;
     margin: 0;
+    color:white;
+}
+
+.MainButton{
+    position:absolute;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    top: 90%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-decoration: none;
+    border-radius: 40px;
+    overflow:hidden;
+    
+}
+
+/*I'm not going to lie, this gradient was purely made by chatgpt, what an artist...*/
+.background{
+    background:
+        radial-gradient(circle 1200px at 50% 30%, rgba(255, 0, 140, 0.533), transparent 35%),
+        radial-gradient(circle at 15% 15%, rgba(170, 80, 255, 0.22), transparent 30%),
+        radial-gradient(circle at 85% 10%, rgba(60, 120, 255, 0.20), transparent 30%),
+        linear-gradient(180deg, #2b0f54 0%, #412693 35%, #1e0d3f 70%, #170833 100%);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+.Start{
+    display: grid;
+    place-items: center;
+    position:relative;
+    width: 135px;
+    height: 50px;
+    border-radius: 40px;
+    background: #5c2471;  
+    background: -webkit-linear-gradient(to right, #6E48AA, #532765);  
+    background: linear-gradient(to right, #6E48AA, #5a2a6d); 
+    color:rgb(250, 245, 255);
+    overflow:hidden;
+    border-style:none;
+    z-index:5;
+}
+
+.MainButton::before{
+    position: absolute;
+    display:none;
+    content: "";
+    height: 300%;
+    width: 15%;
+    background: -webkit-linear-gradient(to right, #02f2ffb7, #57cfff);  
+    background: linear-gradient(to right, #0089b6, #00ffddbf); 
+    transform: rotate(45deg);
+    z-index: 0;
+    filter:blur(3px);
+}
+
+
+.MainButton:hover::before{
+    display:block;
+    animation: animate 3s linear infinite;
+}
+
+@keyframes animate{
+    from{
+       transform: rotate(0deg);
+    }
+    to{
+        transform: rotate(360deg);  
+    }
+}
+
+.MainButton::after{
+    position: absolute;
+    content: "";
+    inset:3px;
+    background:rgb(191, 191, 191);
+    border-radius:40px;
+}
+
+
+.Start:hover{
+    /*transparency*/
+    background: rgba(92, 36, 113, 0.8);  /* fallback for old browsers */
 }
 
 .info{
     display:flex;
     justify-content:center;
+    color:white;
 }
 
 .MainContainer{
@@ -25,14 +109,11 @@ body{
     justify-self: center;
     justify-content: space-around; 
     align-items: center;
-    height: 400px;
+    height: 600px;
     width: 800px;
     padding: 5px;
     border-radius: 10px;
-    border-color: black;
-    border-style:solid;
     align-items: center;
-    background-color: rgba(255, 255, 255, 0.802);
 }
 
 .InputContainer{
@@ -44,6 +125,8 @@ body{
     border-radius: 10px;
     background-color: rgba(192, 192, 192, 0.543);
     padding: 5px;
+    background: -webkit-linear-gradient(to right, #49287d44, #652a7c62);  /* Chrome 10-25, Safari 5.1-6 */
+    background: linear-gradient(to left, #4c2b825c, #622b7869);
 }
 
 
@@ -55,10 +138,11 @@ body{
     border-style:solid;
     border-width: 1px;
     margin: 5px;
-    background-color: rgb(245, 245, 245);
+    background-color: rgba(84, 71, 98, 0.323);
     font-size: small;
     font-family:'Times New Roman', Times, serif;
     padding: 5px;
+    color:white;
 }
 
 
@@ -70,8 +154,9 @@ body{
     width: 90%;
     height: 45%;
     border-radius: 10px;
-    background-color: rgba(192, 192, 192, 0.543);
     padding: 5px;
+    background: -webkit-linear-gradient(to right, #49287d44, #652a7c62);  /* Chrome 10-25, Safari 5.1-6 */
+    background: linear-gradient(to left, #4c2b825c, #622b7869);
 }
 
 .output{
@@ -82,10 +167,11 @@ body{
     border-style:solid;
     border-width: 1px;
     margin: 5px;
-    background-color: rgb(245, 245, 245);
+    background-color: rgba(84, 71, 98, 0.323);
     font-size: small;
     font-family:'Times New Roman', Times, serif;
     padding: 5px;
+    color:white;
 }
 
 .buttonContainer{
@@ -101,11 +187,13 @@ button{
     width: 20%;
     height: 15%;
     border-radius: 10px;
-    border-color: black;
+    border-color: rgba(255, 255, 255, 0.409);
     border-style:solid;
     border-width: 1px;
     margin: 5px;
-    background-color: rgb(245, 245, 245);
+    background: -webkit-linear-gradient(to left, #6E48AA, #532765);  /* Chrome 10-25, Safari 5.1-6 */
+    background: linear-gradient(to left, #6E48AA, #5a2a6d);
+    color:white;
 }
 
 button:hover{
