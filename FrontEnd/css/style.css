@@ -112,18 +112,3 @@ button:hover{
     background-color: rgba(192, 192, 192, 0.543);
     cursor: pointer;
 }
-
-/*
-<div class= "MainContainer">
-        <div class= "InputContainer"> 
-          <div class="input"></div>
-          <button class="generate">Generate</button>
-        </div>
-        
-        <div class = "OutputContainer">
-          <div class="output"></div>
-          <button class="download">Download</button>
-        </div>
-
-    </div>
-*/

@@ -44,5 +44,4 @@ async def read_item_via_request_body(request: Request):
 
 
 
-
 # start application with: uvicorn App:app --reload

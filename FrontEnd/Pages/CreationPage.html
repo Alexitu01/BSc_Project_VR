@@ -16,9 +16,7 @@
     <div class="MainContainer">
       <div class="InputContainer">
         <textarea type="text" id="input" class="input"></textarea>
-        <button class="generate" onclick="getFunction()">
-          Optimize with AI
-        </button>
+        <button class="optimize" onclick="Optimize()">Optimize with AI</button>
       </div>
 
       <div class="OutputContainer">
@@ -28,11 +26,9 @@
     </div>
   </body>
 
-
   <script>
-    async function getFunction(){
+    async function Optimize(){
       text = document.getElementById("input").value;
-     
       const response = await fetch("/CreationPage", {
         method: "POST",
         body: JSON.stringify({ text }),
@@ -42,13 +38,12 @@
       } else{
         return response.text();
       }}).then((data) => {//Remove citation marks
-      document.getElementById("output").value = data.split('"').join("").replace(/\\n/g, "\n");
+      var optimizedResponse = data.split('"').join("").replace(/\\n/g, "\n");
+      document.getElementById("output").value = optimizedResponse;
     }).catch((error) => {
       console.error("Error:", error);
     });
+    }
 
-    
-    };
-    
   </script>
 </html>
