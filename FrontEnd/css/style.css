@@ -25,7 +25,10 @@ body{
     text-decoration: none;
     border-radius: 40px;
     overflow:hidden;
-    
+    width:fit-content;
+    height:fit-content;
+    border-radius:40px;
+    padding:2.5px;
 }
 
 /*I'm not going to lie, this gradient was purely made by chatgpt, what an artist...*/
@@ -53,25 +56,30 @@ body{
     overflow:hidden;
     border-style:none;
     z-index:5;
+    margin:0px;
 }
 
 .MainButton::before{
     position: absolute;
     display:none;
     content: "";
-    height: 300%;
-    width: 15%;
-    background: -webkit-linear-gradient(to right, #02f2ffb7, #57cfff);  
-    background: linear-gradient(to right, #0089b6, #00ffddbf); 
+    height: 280%;
+    width: 18%;
+    background: -webkit-linear-gradient(to right, #41fde4, #3be5ff);  
+    background: linear-gradient(to right, #56a5ff, #51ffe8); 
     transform: rotate(45deg);
     z-index: 0;
     filter:blur(3px);
+    box-shadow:
+    0 0 10px 10px #02f2ff61, 
+    0 0 5px 5px #57cfff67, 
+    0 0 5px 5px #00ffdd5c; 
 }
 
 
 .MainButton:hover::before{
     display:block;
-    animation: animate 3s linear infinite;
+    animation: animate 5s linear infinite;
 }
 
 @keyframes animate{
@@ -86,16 +94,12 @@ body{
 .MainButton::after{
     position: absolute;
     content: "";
-    inset:3px;
-    background:rgb(191, 191, 191);
+    inset:4px;
+    background:rgba(255, 255, 255, 0.743);
     border-radius:40px;
 }
 
 
-.Start:hover{
-    /*transparency*/
-    background: rgba(92, 36, 113, 0.8);  /* fallback for old browsers */
-}
 
 .info{
     display:flex;
@@ -125,7 +129,7 @@ body{
     border-radius: 10px;
     background-color: rgba(192, 192, 192, 0.543);
     padding: 5px;
-    background: -webkit-linear-gradient(to right, #49287d44, #652a7c62);  /* Chrome 10-25, Safari 5.1-6 */
+    background: -webkit-linear-gradient(to right, #49287d44, #652a7c62); 
     background: linear-gradient(to left, #4c2b825c, #622b7869);
 }
 
@@ -155,7 +159,7 @@ body{
     height: 45%;
     border-radius: 10px;
     padding: 5px;
-    background: -webkit-linear-gradient(to right, #49287d44, #652a7c62);  /* Chrome 10-25, Safari 5.1-6 */
+    background: -webkit-linear-gradient(to right, #49287d44, #652a7c62);
     background: linear-gradient(to left, #4c2b825c, #622b7869);
 }
 
