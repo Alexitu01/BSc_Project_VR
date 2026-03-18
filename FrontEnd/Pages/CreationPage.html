@@ -21,29 +21,61 @@
 
       <div class="OutputContainer">
         <textarea type="text" id="output" class="output"></textarea>
-        <button class="download">Download</button>
+        <button class="generate" onclick="Generate()">Generate Image</button>
       </div>
     </div>
   </body>
 
   <script>
-    async function Optimize(){
-      text = document.getElementById("input").value;
-      const response = await fetch("/CreationPage", {
-        method: "POST",
-        body: JSON.stringify({ text }),
-      }).then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-      } else{
-        return response.text();
-      }}).then((data) => {//Remove citation marks
-      var optimizedResponse = data.split('"').join("").replace(/\\n/g, "\n");
-      document.getElementById("output").value = optimizedResponse;
-    }).catch((error) => {
-      console.error("Error:", error);
-    });
+    async function Optimize() {
+      input = document.getElementById("input").value;
+      if (String(input) == "") {
+        alert("Please write");
+      } else {
+        text = { prompt: document.getElementById("input").value };
+        const response = await fetch("/CreationPage", {
+          method: "POST",
+          body: JSON.stringify(text),
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            } else {
+              return response.text();
+            }
+          })
+          .then((data) => {
+            //Remove citation marks
+            var optimizedResponse = data
+              .split('"')
+              .join("")
+              .replace(/\\n/g, "\n");
+            document.getElementById("output").value = optimizedResponse;
+          })
+          .catch((error) => {
+            console.error("Error:", error);
+          });
+      }
     }
 
+    async function Generate() {
+      text = { image: document.getElementById("output").value };
+      const response = await fetch("/CreationPage", {
+        method: "POST",
+        body: JSON.stringify(text),
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          } else {
+            return response.text();
+          }
+        })
+        .then((image) => {
+          var imageContainer = document.createElement("img");
+          imageContainer.src = image;
+          document.body.appendChild(imageContainer);
+        });
+    }
   </script>
 </html>

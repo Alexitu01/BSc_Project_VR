@@ -32,7 +32,7 @@ def creation():
 async def read_item_via_request_body(request: Request):
     #The prompt received from the creationpage (see specification in the javascript)
     postRequest = await request.json()
-    promptForAi = postRequest["text"]
+    promptForAi = postRequest["prompt"]
     print(promptForAi)
 
     #System prompt containing instructions for the ai
