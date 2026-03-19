@@ -1,14 +1,23 @@
+from datetime import datetime
+
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+import requests
+from io import BytesIO
+from google import genai
+from google.genai.types import GenerateContentConfig, ImageConfig, Modality
+from PIL import Image
 import os
 
 from groq import Groq
 
+googleClient = genai.Client()
 client = Groq(
     api_key=os.environ.get("GROQ_API_KEY"),
-    
 )
+with open('instruction.txt', 'r') as file:
+    imageSpecs = file.read().replace('\n', '')
 
 app = FastAPI()
 app.mount("/FrontEnd", StaticFiles(directory="FrontEnd"), name="FrontEnd")
@@ -32,7 +41,17 @@ def creation():
 async def read_item_via_request_body(request: Request):
     #The prompt received from the creationpage (see specification in the javascript)
     postRequest = await request.json()
-    promptForAi = postRequest["prompt"]
+    
+    #Determines if json contains a optomized prompt or an image prompt, and calls the corresponding function.
+    if("prompt" in postRequest):
+        return generatePrompt(postRequest["prompt"])
+    else:
+        return generateImages(postRequest["image"])
+
+
+
+
+def generatePrompt(promptForAi):
     print(promptForAi)
 
     #System prompt containing instructions for the ai
@@ -49,6 +68,32 @@ async def read_item_via_request_body(request: Request):
 
     return chat_completion.choices[0].message.content
 
-
+def generateImages(promptForAi):
+    print("*********Generation begin************")
+    response = googleClient.models.generate_content(
+        model="gemini-3.1-flash-image-preview",
+        contents=(promptForAi),
+        config=GenerateContentConfig(
+            system_instruction=[imageSpecs],
+            response_modalities=[Modality.TEXT, Modality.IMAGE],
+            image_config = ImageConfig(aspect_ratio="4:1")
+        ),
+    )
+    print("Finished generating")
+    if response.candidates != None and response.candidates[0].content != None and response.candidates[0].content.parts != None:
+        for part in response.candidates[0].content.parts:
+            if part.text:
+                print(part.text)
+            elif part.inline_data:
+                if part.inline_data.data != None:
+                    image = Image.open(BytesIO((part.inline_data.data)))
+                    output_dir = "FrontEnd/Images"
+                    imagePath = os.path.join(output_dir, str(datetime.now()) + ".png")
+                    image.save(imagePath)
+                    print("*****************************************\n")
+                    print("THIS IS THE PATH", imagePath)
+                    print("*****************************************")
+                    return {"path": imagePath}                
+    return None
 
 # start application with: uvicorn App:app --reload

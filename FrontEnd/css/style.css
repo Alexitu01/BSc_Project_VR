@@ -2,8 +2,22 @@ body{
     margin: 0;
     padding: 0;
 }
+textarea{
+    resize: none;
+}
+
+button{
+    border-radius: 10px;
+    border-color: rgba(255, 255, 255, 0.409);
+    border-style:solid;
+    border-width: 1px;
+    background: -webkit-linear-gradient(to left, #6E48AA, #532765);  /* Chrome 10-25, Safari 5.1-6 */
+    background: linear-gradient(to left, #6E48AA, #5a2a6d);
+    color:white;
+}
 
 .title{
+    position:relative;
     display: flex;
     justify-content: center;
     background-color: rgba(82, 76, 76, 0.472);
@@ -13,6 +27,26 @@ body{
     margin: 0;
     color:white;
 }
+
+.back{
+    position: absolute;
+    display:flex;
+    justify-content:center;
+    align-items: center;
+    left: 10px;
+    top: 0;
+    bottom:0;
+    width: 100px;
+    height: 25px;
+    margin: auto 0;
+    text-decoration: none;
+}
+
+.back button{
+    width: 100%;
+    height: 100%;
+}
+
 
 .MainButton{
     position:absolute;
@@ -121,8 +155,8 @@ body{
 }
 
 .InputContainer{
+    position:relative;
     display: flex;
-    justify-content: center;
     align-items: center;
     width: 90%;
     height: 45%;
@@ -135,7 +169,7 @@ body{
 
 
 .input{
-    width: 80%;
+    width: 545px;
     height: 80%;
     border-radius: 10px;
     border-color: black;
@@ -152,10 +186,10 @@ body{
 
 
 .OutputContainer{
+    position:relative;
     display: flex;
-    justify-content: center;
     align-items: center;
-    width: 90%;
+    width: 90%; 
     height: 45%;
     border-radius: 10px;
     padding: 5px;
@@ -164,7 +198,7 @@ body{
 }
 
 .output{
-    width: 80%;
+    width: 545px;
     height: 80%;
     border-radius: 10px;
     border-color: black;
@@ -178,6 +212,37 @@ body{
     color:white;
 }
 
+.optimize{
+    width: 20%;
+    height: 15%;
+}
+
+.generate{
+    width: 20%;
+    height: 15%;
+}
+
+
+.spinner{
+    position:absolute;
+    display:none;
+    width: 30px;
+    height: 30px;
+    border: 5px solid rgba(255, 255, 255, 0.3);
+    border-top: 5px solid rgba(207, 183, 255, 0.964);
+    border-radius: 50%;
+    padding: 0px;
+    margin: 0px;
+    animation: spin 1s linear infinite;
+    right: 60px;
+
+}
+
+@keyframes spin{
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
 .buttonContainer{
     display: relative;
     justify-content: center;
@@ -186,21 +251,50 @@ body{
     height: 20%;
 }
 
-button{
-    display: absolute;
-    width: 20%;
-    height: 15%;
-    border-radius: 10px;
-    border-color: rgba(255, 255, 255, 0.409);
-    border-style:solid;
-    border-width: 1px;
-    margin: 5px;
-    background: -webkit-linear-gradient(to left, #6E48AA, #532765);  /* Chrome 10-25, Safari 5.1-6 */
-    background: linear-gradient(to left, #6E48AA, #5a2a6d);
-    color:white;
-}
 
 button:hover{
-    background-color: rgba(192, 192, 192, 0.543);
     cursor: pointer;
+    opacity: 0.8;
+}
+
+.ImageContainer{
+    position:relative;
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: row;
+    justify-content: center;
+    justify-content: space-evenly;
+    align-items: center;
+    justify-self:center;
+    width: 90%;
+    min-height: 300px;
+    border-radius: 10px;
+    padding: 5px;
+    background: -webkit-linear-gradient(to right, #49287d44, #652a7c62);
+    background: linear-gradient(to left, #4c2b825c, #622b7869);
+    margin-bottom:10px;
+    padding-top: 40px;
+
+}
+
+.status{
+    color:rgb(255, 255, 255);
+    font-family:'Times New Roman', Times, serif;
+    position:absolute;
+    margin: 10px;
+    top: 10px;
+    left:50%;
+    transform: translate(-50%, -50%);
+}
+.ImageContainer img{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 400px;
+    height: 200px;
+    padding: 2px;
+    border-color: rgba(255, 255, 255, 0.571);
+    border-style:solid;
+    border-width: 1px;
+    margin:2px;
 }
