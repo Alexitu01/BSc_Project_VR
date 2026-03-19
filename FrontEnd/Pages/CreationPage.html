@@ -39,21 +39,17 @@
   </body>
 
   <script>
+    //Method for calling the optimization logic in app.py
     async function Optimize() {
-      let input = document.getElementById("input").value;
-      if (input.trim() == "") {
+      let input = document.getElementById("input").value; //Get prompt for optimization
+      if (input.trim() == "") { //Check the textarea is not empty.
         alert("Please write something in the input field before optimizing");
         return;
       }
-      //Define the button and loading icon.
-      let button = document.getElementById("optimize");
-      let loading = document.getElementById("optimizeSpinner");
 
-      //If button is pressed, swap it with the loading icon.
-      button.style.display = "none";
-      loading.style.display = "block";
+      loading();
 
-      let text = { prompt: document.getElementById("input").value };
+      let text = { prompt: document.getElementById("input").value }; //Put prompt into json format
       const response = await fetch("/CreationPage", {
         method: "POST",
         body: JSON.stringify(text),
@@ -70,54 +66,69 @@
           var optimizedResponse = data
             .split('"')
             .join("")
-            .replace(/\\n/g, "\n");
-          document.getElementById("output").value = optimizedResponse;
+            .replace(/\\n/g, "\n"); //Gets the optimized prompt from app.py
+          document.getElementById("output").value = optimizedResponse; //Put optimized prompt into output container.
         })
         .catch((error) => {
+          stopLoading();
           console.error("Error:", error);
         });
-      loading.style.display = "none";
-      button.style.display = "block";
+      stopLoading();
     }
 
-
+    //Method for calling generation method in app.py.
     async function Generate() {
-      console.log("**********Generate called**********")
-      let input = document.getElementById("output").value;
-      if (input.trim() == "") {
+      console.log("**********Generate called**********");
+      let input = document.getElementById("output").value; //Get the prompt
+      if (input.trim() == "") { //Make sure it's not 'empty'
         alert("Please write something in the input field before optimizing");
         return;
       }
-      let button = document.getElementById("generate");
-      let loading = document.getElementById("generateSpinner");
-      let imageContainer = document.getElementsByClassName("ImageContainer")[0]
-      button.style.display = "none";
-      loading.style.display = "block";
 
-      let text = { image: input };
+      loading(); //Removes button and starts the loading icon.
+
+      let imageContainer = document.getElementsByClassName("ImageContainer")[0];
+      let text = { image: input }; //Define the prompt as a json to send to app.py
       const response = await fetch("/CreationPage", {
         method: "POST",
         body: JSON.stringify(text),
       })
-        .then((response) => {
+        .then((response) => { //Checks response to see if there was a connection issue
           if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            stopLoading();
+            alert("HTTP error! status: " + response.status);
+            return;
           } else {
             return response.json();
           }
         })
-        .then((imageJson) => {
-          console.log("Response received");
-          let imagePath = imageJson.path
-          if (typeof imagePath === "string") {
-            var image = document.createElement("img");
-            image.src = imagePath;
-            console.log(imagePath)
-            imageContainer.appendChild(image);
+        .then((imageJson) => { //If no connection issue, we take the response json we get from app.py
+          if (imageJson.error == 1) { //See if there was an error with the google api call
+            stopLoading();
+            alert(imageJson.response);
+            return;
           } else {
-            alert("Something went wrong, please try again later");
+            console.log("Response received");
+            let imagePath = imageJson.response; //Get the path to the saved image, that gemini created
+              var image = document.createElement("img");
+              image.src = imagePath;
+              console.log(imagePath);
+              imageContainer.appendChild(image); //Add newly made image to the imagecontainer
           }
         });
+      stopLoading();
+    }
+
+    function loading() { //Starts loading animation
+      let button = document.getElementById("generate");
+      let loading = document.getElementById("generateSpinner");
+      button.style.display = "none";
+      loading.style.display = "block";
+    }
+
+    function stopLoading() { //Stops loading animation.
+      let button = document.getElementById("generate");
+      let loading = document.getElementById("generateSpinner");
       loading.style.display = "none";
       button.style.display = "block";
     }

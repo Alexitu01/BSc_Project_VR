@@ -69,31 +69,35 @@ def generatePrompt(promptForAi):
     return chat_completion.choices[0].message.content
 
 def generateImages(promptForAi):
-    print("*********Generation begin************")
-    response = googleClient.models.generate_content(
-        model="gemini-3.1-flash-image-preview",
-        contents=(promptForAi),
-        config=GenerateContentConfig(
-            system_instruction=[imageSpecs],
-            response_modalities=[Modality.TEXT, Modality.IMAGE],
-            image_config = ImageConfig(aspect_ratio="4:1")
-        ),
-    )
+    try:
+        print("*********Generation begin************")
+        response = googleClient.models.generate_content( #Calls the googleClient, with specified prompt for generating image
+            model="gemini-3.1-flash-image-preview",
+            contents=(promptForAi),
+            config=GenerateContentConfig(
+                system_instruction=[imageSpecs], #Containst system instructions (see instruction.txt)
+                response_modalities=[Modality.TEXT, Modality.IMAGE],
+                image_config = ImageConfig(aspect_ratio="4:1")
+            ),
+        )
+    except:
+        return {"response": "An issue emerged from trying to generate the image \n The problem can stem from: \n 1. Quota has been met (wait 1m between every generation) \n 2. There was an issue with authorization ", "error": 1 }
+        
     print("Finished generating")
-    if response.candidates != None and response.candidates[0].content != None and response.candidates[0].content.parts != None:
+    if response.candidates != None and response.candidates[0].content != None and response.candidates[0].content.parts != None: #Necessary checks or else compiler cries
         for part in response.candidates[0].content.parts:
             if part.text:
-                print(part.text)
+                print(part.text) #The 'thinking' text that the AI responds with in its process of generating an image.
             elif part.inline_data:
                 if part.inline_data.data != None:
-                    image = Image.open(BytesIO((part.inline_data.data)))
+                    image = Image.open(BytesIO((part.inline_data.data))) #Defines the reference for the image generated
                     output_dir = "FrontEnd/Images"
-                    imagePath = os.path.join(output_dir, str(datetime.now()) + ".png")
-                    image.save(imagePath)
+                    imagePath = os.path.join(output_dir, str(datetime.now()) + ".png") #Using datetime to give a unique name to each image generated.
+                    image.save(imagePath) #Saves the image to the filepath
                     print("*****************************************\n")
                     print("THIS IS THE PATH", imagePath)
                     print("*****************************************")
-                    return {"path": imagePath}                
-    return None
+                    return {"response": imagePath, "error": 0}                
+    return {"response": "There was an issue with the generated content, try again later", "error": 1}
 
 # start application with: uvicorn App:app --reload
