@@ -46,7 +46,7 @@ async def read_item_via_request_body(request: Request):
     if("prompt" in postRequest):
         return generatePrompt(postRequest["prompt"])
     else:
-        return generateImages(postRequest["image"])
+        return generateImages(postRequest["imagePrompt"])
 
 
 

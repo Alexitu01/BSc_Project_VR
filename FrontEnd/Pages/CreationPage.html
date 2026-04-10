@@ -88,7 +88,7 @@
       loading(); //Removes button and starts the loading icon.
 
       let imageContainer = document.getElementsByClassName("ImageContainer")[0];
-      let text = { image: input }; //Define the prompt as a json to send to app.py
+      let text = { imagePrompt: input }; //Define the prompt as a json to send to app.py
       const response = await fetch("/CreationPage", {
         method: "POST",
         body: JSON.stringify(text),
