@@ -1,5 +1,5 @@
 from datetime import datetime
-
+import runpod
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -9,13 +9,14 @@ from google import genai
 from google.genai.types import GenerateContentConfig, ImageConfig, Modality
 from PIL import Image
 import os
+import time
 
 from groq import Groq
 
 googleClient = genai.Client()
-client = Groq(
-    api_key=os.environ.get("GROQ_API_KEY"),
-)
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"),)
+serverlessAPI = os.environ.get("SERVERLESS_API")
+
 with open('instruction.txt', 'r') as file:
     imageSpecs = file.read().replace('\n', '')
 
@@ -45,9 +46,32 @@ async def read_item_via_request_body(request: Request):
     #Determines if json contains a optomized prompt or an image prompt, and calls the corresponding function.
     if("prompt" in postRequest):
         return generatePrompt(postRequest["prompt"])
-    else:
+    elif "imagePrompt" in postRequest:
         return generateImages(postRequest["imagePrompt"])
+    else:
+        return generatePly(postRequest["base64image"])
+    
 
+
+def generatePly(base64image):
+    
+    endpoint = runpod.Endpoint("aamisvz3itx91m", serverlessAPI)
+    json = {"image": base64image}
+    run_request = endpoint.run(json)
+    
+    while True:
+        current_status = run_request.status()
+        print(current_status)
+        
+        if current_status == "COMPLETED":
+            break
+        elif current_status in {"FAILED", "CANCELLED", "TIMED_OUT"}:
+            return RuntimeError("Job failed or aborted with message: " + current_status)
+        
+        time.sleep(30)
+        
+    
+    return run_request.output() 
 
 
 
