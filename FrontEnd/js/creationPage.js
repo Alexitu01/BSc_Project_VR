@@ -1,0 +1,95 @@
+//Method for calling the optimization logic in app.py
+async function Optimize() {
+  let input = document.getElementById("input").value; //Get prompt for optimization
+  if (input.trim() == "") {
+    //Check the textarea is not empty.
+    alert("Please write something in the input field before optimizing");
+    return;
+  }
+  let button = document.getElementById("optimize");
+  let spinner = document.getElementById("optimizeSpinner");
+  loading(button, spinner);
+
+  let text = { prompt: document.getElementById("input").value }; //Put prompt into json format
+  const response = await fetch("/CreationPage", {
+    method: "POST",
+    body: JSON.stringify(text),
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      } else {
+        return response.text();
+      }
+    })
+    .then((data) => {
+      //Remove citation marks
+      var optimizedResponse = data.split('"').join("").replace(/\\n/g, "\n"); //Gets the optimized prompt from app.py
+      document.getElementById("output").value = optimizedResponse; //Put optimized prompt into output container.
+    })
+    .catch((error) => {
+      stopLoading(button,spinner);
+      console.error("Error:", error);
+    });
+  stopLoading(button,spinner);
+}
+
+//Method for calling generation method in app.py.
+async function Generate() {
+  console.log("**********Generate called**********");
+  let input = document.getElementById("output").value; //Get the prompt
+  if (input.trim() == "") {
+    //Make sure it's not 'empty'
+    alert("Please write something in the input field before optimizing");
+    return;
+  }
+  let button = document.getElementById("generate");
+  let spinner = document.getElementById("generateSpinner");
+  loading(button,spinner); //Removes button and starts the loading icon.
+
+  let imageContainer = document.getElementsByClassName("ImageContainer")[0];
+  let text = { imagePrompt: input }; //Define the prompt as a json to send to app.py
+  const response = await fetch("/CreationPage", {
+    method: "POST",
+    body: JSON.stringify(text),
+  })
+    .then((response) => {
+      //Checks response to see if there was a connection issue
+      if (!response.ok) {
+        stopLoading(button,spinner);
+        alert("HTTP error! status: " + response.status);
+        return;
+      } else {
+        return response.json();
+      }
+    })
+    .then((imageJson) => {
+      //If no connection issue, we take the response json we get from app.py
+      if (imageJson.error == 1) {
+        //See if there was an error with the google api call
+        stopLoading(button,spinner);
+        alert(imageJson.response);
+        return;
+      } else {
+        console.log("Response received");
+        let imagePath = imageJson.response; //Get the path to the saved image, that gemini created
+        var image = document.createElement("img");
+        image.src = imagePath;
+        console.log(imagePath);
+        imageContainer.appendChild(image); //Add newly made image to the imagecontainer
+      }
+    });
+  stopLoading(button,spinner);
+}
+
+function loading(element, spinner) {
+  //Starts loading animation;
+  element.style.display = "none";
+  spinner.style.display = "block";
+}
+
+function stopLoading(element, spinner) {
+  //Stops loading animation.
+  spinner.style.display = "none";
+  element.style.display = "block";
+}
