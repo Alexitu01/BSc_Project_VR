@@ -54,7 +54,6 @@ async def read_item_via_request_body(request: Request):
 
 
 def generatePly(base64image):
-    
     endpoint = runpod.Endpoint("aamisvz3itx91m", serverlessAPI)
     json = {"image": base64image}
     run_request = endpoint.run(json)

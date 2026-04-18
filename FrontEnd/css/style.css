@@ -259,11 +259,8 @@ button:hover{
 
 .ImageContainer{
     position:relative;
-    display: flex;
-    flex-wrap: wrap;
-    flex-direction: row;
-    justify-content: center;
-    justify-content: space-evenly;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
     align-items: center;
     justify-self:center;
     width: 90%;
@@ -273,7 +270,6 @@ button:hover{
     background: -webkit-linear-gradient(to right, #49287d44, #652a7c62);
     background: linear-gradient(to left, #4c2b825c, #622b7869);
     margin-bottom:10px;
-    padding-top: 40px;
 
 }
 
@@ -283,18 +279,66 @@ button:hover{
     position:absolute;
     margin: 10px;
     top: 10px;
-    left:50%;
+    left: 50%;
     transform: translate(-50%, -50%);
+    grid-row:1;
 }
-.ImageContainer img{
+
+.ImageContainer .box{
+    position:relative;
     display: flex;
     justify-content: center;
     align-items: center;
-    aspect-ratio: 3/1;
-    padding: 2px;
-    border-color: rgba(255, 255, 255, 0.571);
-    border-style:solid;
+    padding: 15px;
     border-width: 1px;
-    margin:2px;
     max-width: 90%;
+    height: auto;
+    background-color: rgba(54, 21, 90, 0.768);
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(17, 0, 74, 0.735);
+    margin:10px;
+}
+
+.ImageContainer .box img{
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+}
+
+.ImageContainer .chosenImage{
+    box-shadow: 0 0 10px 5px #af90e1bd;
+}
+
+.images{
+    display:flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction:column;
+    grid-row:2;
+}
+
+.wrapper{
+    position:relative;
+    display:flex;
+    justify-content:left;
+    align-items: center;
+    width: 100%;
+    height:50px;
+    grid-row:3;
+}
+
+#generatePly{
+    position: absolute;
+    display:flex;
+    justify-content:center;
+    align-items: center;
+    right: 10px;
+    bottom: 10px;
+    width: 100px;
+    height: 25px;
+}
+
+.inactive{
+    pointer-events: none;
+    opacity: 0.5;
 }

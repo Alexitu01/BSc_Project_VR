@@ -47,7 +47,7 @@ async function Generate() {
   let spinner = document.getElementById("generateSpinner");
   loading(button,spinner); //Removes button and starts the loading icon.
 
-  let imageContainer = document.getElementsByClassName("ImageContainer")[0];
+  let images = document.getElementsByClassName("images")[0];
   let text = { imagePrompt: input }; //Define the prompt as a json to send to app.py
   const response = await fetch("/CreationPage", {
     method: "POST",
@@ -74,9 +74,14 @@ async function Generate() {
         console.log("Response received");
         let imagePath = imageJson.response; //Get the path to the saved image, that gemini created
         var image = document.createElement("img");
-        image.src = imagePath;
+        image.src = imagePath; //After image is created, the path of the image that needs to be shown is set to the html image element
         console.log(imagePath);
-        imageContainer.appendChild(image); //Add newly made image to the imagecontainer
+
+        const box = document.createElement("div"); //Box for containing the image element.
+        box.classList.add("box") //Add class for styling and further logic (look at code at the top)
+
+        box.appendChild(image) //Add image element to box
+        images.appendChild(box); //Add box - with image inside - to the list of images
       }
     });
   stopLoading(button,spinner);
