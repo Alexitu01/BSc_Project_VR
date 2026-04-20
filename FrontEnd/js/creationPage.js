@@ -1,3 +1,33 @@
+var chosenImage = null;
+
+document.getElementById("images").addEventListener("click", function (el) {
+  if (el.target && el.target.matches(".box")) {
+    console.log("Box clicked")
+    toggleChosenImage(el.target)
+  } else if (el.target && el.target.nodeName == "IMG") {
+    parentBox = el.target.parentNode;
+    console.log("Image clicked")
+    toggleChosenImage(parentBox)
+  }
+});
+
+function toggleChosenImage(element) {
+  if (chosenImage == null) {
+    //If Image is null, simply define the chosen image
+    chosenImage = element
+    chosenImage.classList.toggle("chosenImage");
+  } else if (chosenImage == element) {
+    //If the user clicks the same image, interpret it as 'un-choosing' the image
+    chosenImage.classList.toggle("chosenImage");
+    chosenImage = null;
+  } else {
+    //In this scenario the user chooses another image.
+    chosenImage.classList.toggle("chosenImage");
+    chosenImage = element;
+    chosenImage.classList.toggle("chosenImage");
+  }
+}
+
 //Method for calling the optimization logic in app.py
 async function Optimize() {
   let input = document.getElementById("input").value; //Get prompt for optimization
@@ -28,10 +58,10 @@ async function Optimize() {
       document.getElementById("output").value = optimizedResponse; //Put optimized prompt into output container.
     })
     .catch((error) => {
-      stopLoading(button,spinner);
+      stopLoading(button, spinner);
       console.error("Error:", error);
     });
-  stopLoading(button,spinner);
+  stopLoading(button, spinner);
 }
 
 //Method for calling generation method in app.py.
@@ -45,7 +75,7 @@ async function Generate() {
   }
   let button = document.getElementById("generate");
   let spinner = document.getElementById("generateSpinner");
-  loading(button,spinner); //Removes button and starts the loading icon.
+  loading(button, spinner); //Removes button and starts the loading icon.
 
   let images = document.getElementsByClassName("images")[0];
   let text = { imagePrompt: input }; //Define the prompt as a json to send to app.py
@@ -56,7 +86,7 @@ async function Generate() {
     .then((response) => {
       //Checks response to see if there was a connection issue
       if (!response.ok) {
-        stopLoading(button,spinner);
+        stopLoading(button, spinner);
         alert("HTTP error! status: " + response.status);
         return;
       } else {
@@ -67,7 +97,7 @@ async function Generate() {
       //If no connection issue, we take the response json we get from app.py
       if (imageJson.error == 1) {
         //See if there was an error with the google api call
-        stopLoading(button,spinner);
+        stopLoading(button, spinner);
         alert(imageJson.response);
         return;
       } else {
@@ -78,13 +108,13 @@ async function Generate() {
         console.log(imagePath);
 
         const box = document.createElement("div"); //Box for containing the image element.
-        box.classList.add("box") //Add class for styling and further logic (look at code at the top)
+        box.classList.add("box"); //Add class for styling and further logic (look at code at the top)
 
-        box.appendChild(image) //Add image element to box
+        box.appendChild(image); //Add image element to box
         images.appendChild(box); //Add box - with image inside - to the list of images
       }
     });
-  stopLoading(button,spinner);
+  stopLoading(button, spinner);
 }
 
 function loading(element, spinner) {

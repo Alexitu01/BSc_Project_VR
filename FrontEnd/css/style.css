@@ -263,7 +263,7 @@ button:hover{
     grid-template-rows: auto 1fr auto;
     align-items: center;
     justify-self:center;
-    width: 90%;
+    width: 80%;
     min-height: 300px;
     border-radius: 10px;
     padding: 5px;
@@ -276,12 +276,9 @@ button:hover{
 .status{
     color:rgb(255, 255, 255);
     font-family:'Times New Roman', Times, serif;
-    position:absolute;
     margin: 10px;
-    top: 10px;
-    left: 50%;
-    transform: translate(-50%, -50%);
     grid-row:1;
+    text-align:center;
 }
 
 .ImageContainer .box{
@@ -303,6 +300,11 @@ button:hover{
     width: 100%;
     height: auto;
     object-fit: contain;
+}
+
+.ImageContainer .box:hover{
+    cursor:pointer;
+    opacity:0.9;
 }
 
 .ImageContainer .chosenImage{
