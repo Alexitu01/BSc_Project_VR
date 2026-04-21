@@ -1,31 +1,62 @@
 var chosenImage = null;
+const generate3Dbutton = document.getElementById("generatePly");
 
 document.getElementById("images").addEventListener("click", function (el) {
   if (el.target && el.target.matches(".box")) {
-    console.log("Box clicked")
-    toggleChosenImage(el.target)
+    console.log("Box clicked");
+    toggleChosenImage(el.target);
   } else if (el.target && el.target.nodeName == "IMG") {
     parentBox = el.target.parentNode;
-    console.log("Image clicked")
-    toggleChosenImage(parentBox)
+    console.log("Image clicked");
+    toggleChosenImage(parentBox);
   }
 });
 
 function toggleChosenImage(element) {
   if (chosenImage == null) {
     //If Image is null, simply define the chosen image
-    chosenImage = element
+    chosenImage = element;
     chosenImage.classList.toggle("chosenImage");
+    generate3Dbutton.classList.remove("inactive");
   } else if (chosenImage == element) {
     //If the user clicks the same image, interpret it as 'un-choosing' the image
     chosenImage.classList.toggle("chosenImage");
     chosenImage = null;
+    generate3Dbutton.classList.add("inactive");
   } else {
     //In this scenario the user chooses another image.
     chosenImage.classList.toggle("chosenImage");
     chosenImage = element;
     chosenImage.classList.toggle("chosenImage");
   }
+}
+
+async function create3D() {
+  if (chosenImage == null) {
+    alert("Please choose an image");
+    return;
+  }
+  const src = chosenImage.getElementsByTagName("img")[0].getAttribute("src");
+  imagePathJson = { imagePath: src };
+  console.log(imagePathJson);
+  time = src.split("/Images/").pop()
+  if(!confirm("Are you sure you want to generate from image: " + "\n" + time)){
+    return;
+  }
+  const response = await fetch("CreationPage", {
+    method: "POST",
+    body: JSON.stringify(imagePathJson),
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      } else {
+        return response.json();
+      }
+    })
+    .then((json) => {
+      console.log(json.response);
+    });
 }
 
 //Method for calling the optimization logic in app.py
@@ -49,7 +80,7 @@ async function Optimize() {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       } else {
-        return response.text();
+        return response.json();
       }
     })
     .then((data) => {

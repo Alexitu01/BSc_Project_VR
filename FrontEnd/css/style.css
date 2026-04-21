@@ -329,6 +329,11 @@ button:hover{
     grid-row:3;
 }
 
+.inactive{
+    pointer-events: none;
+    opacity: 0.5;
+}
+
 #generatePly{
     position: absolute;
     display:flex;
@@ -340,7 +345,3 @@ button:hover{
     height: 25px;
 }
 
-.inactive{
-    pointer-events: none;
-    opacity: 0.5;
-}
