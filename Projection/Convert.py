@@ -56,7 +56,7 @@ right	x = +1
 left	x = -1
 top	    y = +1
 bottom	y = -1
-leaving this here so I don't mess it up
+leaving this here so I don't mess it up (think cube)
 '''
 FACE_DIRECTIONS = {
     # using np.ones_like since u and v are arrays
@@ -112,5 +112,32 @@ def extract_all_faces(pano, face_size):
         name: extract_face(pano, name, face_size)
         for name in FACE_DIRECTIONS
     }
+
+
+
+
+#Test function
+def load_panorama_from_file(path):
+    image = Image.open(path).convert("RGB")
+    return np.array(image)
+
+#Also test function
+if __name__ == "__main__":
+    # Load panorama (use your own file here)
+    pano = load_panorama_from_file("2026-03-19 16_23_58.289016.png")
+    
+    # Prepare
+    h, w, _ = pano.shape
+    face_size = w // 4  # keep it simple for testing
+    
+    # Extract faces
+    faces = extract_all_faces(pano, face_size)
+    
+    # Save outputs
+    for name, face in faces.items():
+        Image.fromarray(face).save(f"{name}.png")
+    
+    print("Done. Saved 6 cube faces.")
+
 
 
