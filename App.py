@@ -1,21 +1,24 @@
 from datetime import datetime
-
+import runpod
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import requests
+from pathlib import Path
 from io import BytesIO
 from google import genai
 from google.genai.types import GenerateContentConfig, ImageConfig, Modality
 from PIL import Image
-import os
-
 from groq import Groq
+import os
+import time
+import base64
+
 
 googleClient = genai.Client()
-client = Groq(
-    api_key=os.environ.get("GROQ_API_KEY"),
-)
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"),)
+serverlessAPI = os.environ.get("SERVERLESS_API")
+
 with open('instruction.txt', 'r') as file:
     imageSpecs = file.read().replace('\n', '')
 
@@ -41,14 +44,41 @@ def creation():
 async def read_item_via_request_body(request: Request):
     #The prompt received from the creationpage (see specification in the javascript)
     postRequest = await request.json()
-    
+    print(postRequest)
     #Determines if json contains a optomized prompt or an image prompt, and calls the corresponding function.
     if("prompt" in postRequest):
         return generatePrompt(postRequest["prompt"])
-    else:
+    elif "imagePrompt" in postRequest:
         return generateImages(postRequest["imagePrompt"])
+    elif "imagePath" in postRequest:
+        return generatePly(postRequest["imagePath"])
+    else:
+        return {"response": "Post request not supported", "error": 1}
+    
 
 
+def generatePly(imagePath):
+    print(imagePath)
+    with open(imagePath, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+
+    data = {"image": encoded_string}
+
+    endpoint = runpod.Endpoint("aamisvz3itx91m", serverlessAPI)
+
+    run_request = endpoint.run(data)
+
+    while True:
+        status = run_request.status()
+        print(status)
+        
+        if status == "COMPLETED":
+            break
+        if status in {"FAILED", "CANCELLED", "TIMED_OUT"}:
+            raise RuntimeError("Job ended with status: " + status)
+        time.sleep(30)
+    
+    return run_request.output() 
 
 
 def generatePrompt(promptForAi):
