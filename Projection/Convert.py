@@ -2,6 +2,7 @@ import base64
 import io
 import numpy as np
 from PIL import Image
+from pathlib import Path
 from scipy.ndimage import map_coordinates
 
 
@@ -124,7 +125,7 @@ def load_panorama_from_file(path):
 #Also test function
 if __name__ == "__main__":
     # Load panorama (use your own file here)
-    pano = load_panorama_from_file("2026-03-19 16_23_58.289016.png")
+    pano = load_panorama_from_file("test.jpeg")
     
     # Prepare
     h, w, _ = pano.shape
@@ -133,9 +134,12 @@ if __name__ == "__main__":
     # Extract faces
     faces = extract_all_faces(pano, face_size)
     
+    output_dir = Path("faces")
+    output_dir.mkdir(exist_ok=True)
+
     # Save outputs
     for name, face in faces.items():
-        Image.fromarray(face).save(f"{name}.png")
+        Image.fromarray(face).save(output_dir / f"{name}.png")
     
     print("Done. Saved 6 cube faces.")
 
