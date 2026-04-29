@@ -131,7 +131,7 @@ def export_ply(cloud: SplatCloud, path: str | Path) -> None:
 
     Arguments:
         cloud: the SplatCloud to export (from parser, stitcher, or optimiser)
-        path:  output file path — will be created or overwritten
+        path:  output file path - will be created or overwritten
 
     The output file is immediately loadable in the aras-p Unity importer
     and standard 3DGS viewers like SuperSplat.
@@ -175,14 +175,14 @@ def export_ply(cloud: SplatCloud, path: str | Path) -> None:
         cloud.rotations,        # columns 10-13: rot_0, rot_1, rot_2, rot_3
     ]).astype(np.float32)
 
-    # Sanity check — should never fail but catches bugs immediately
+    # This should never fail, we're fucked if it does
     assert data.shape == (cloud.count, N_PROPS), \
         f"Data shape mismatch: expected ({cloud.count}, {N_PROPS}), got {data.shape}"
 
     # ------------------------------------------------------------------
     # Step 3: Write header then binary data
     #
-    # 'wb' opens in write-binary mode — essential, never use 'w' here.
+    # 'wb' opens in write-binary mode - essential, never use 'w' here.
     # Writing text mode would corrupt the binary block on Windows by
     # translating \n to \r\n inside the data.
     # ------------------------------------------------------------------
@@ -204,115 +204,3 @@ def export_ply(cloud: SplatCloud, path: str | Path) -> None:
     print(f"  Written: {file_mb:.1f} MB")
     print(f"  Bytes per splat: {N_PROPS * 4} ({N_PROPS} floats × 4 bytes)")
     print(f"  Done.")
-
-
-# ---------------------------------------------------------------------------
-# Round-trip test
-# ---------------------------------------------------------------------------
-
-def test_round_trip(input_path: str | Path) -> None:
-    """
-    Parse a .ply, export it, parse the export, and compare.
-
-    A perfect round-trip means every value in the re-parsed file is
-    identical (within float32 precision) to the original. If this passes,
-    the exporter is correct.
-
-    We check:
-      - Splat count matches
-      - Position ranges match (geometry preserved)
-      - Opacity mean matches (values preserved through encode/decode cycle)
-      - Scale mean matches
-    """
-    print("=" * 52)
-    print("Round-trip test")
-    print("=" * 52)
-
-    # Parse original
-    print("\n[1/3] Parsing original file...")
-    original = parse_ply(input_path)
-
-    # Export to a temp file
-    temp_path = Path(input_path).parent / "_roundtrip_test.ply"
-    print(f"\n[2/3] Exporting to {temp_path.name}...")
-    export_ply(original, temp_path)
-
-    # Parse the exported file
-    print(f"\n[3/3] Parsing exported file...")
-    reloaded = parse_ply(temp_path)
-
-    # Compare
-    print("\n── Comparison ──")
-
-    ok = True
-
-    # Count
-    if original.count == reloaded.count:
-        print(f"  ✓ Splat count:  {original.count:,}")
-    else:
-        print(f"  ✗ Splat count:  {original.count:,} → {reloaded.count:,}")
-        ok = False
-
-    # Positions
-    pos_diff = np.abs(original.positions - reloaded.positions).max()
-    if pos_diff < 1e-5:
-        print(f"  ✓ Positions:    max diff {pos_diff:.2e}")
-    else:
-        print(f"  ✗ Positions:    max diff {pos_diff:.2e}  (too large)")
-        ok = False
-
-    # Opacity (compare decoded values — tests the logit round-trip)
-    op_diff = np.abs(original.opacities - reloaded.opacities).max()
-    if op_diff < 1e-4:
-        print(f"  ✓ Opacities:    max diff {op_diff:.2e}")
-    else:
-        print(f"  ✗ Opacities:    max diff {op_diff:.2e}  (too large)")
-        ok = False
-
-    # Scale (compare decoded values — tests the log round-trip)
-    sc_diff = np.abs(original.scales - reloaded.scales).max()
-    if sc_diff < 1e-4:
-        print(f"  ✓ Scales:       max diff {sc_diff:.2e}")
-    else:
-        print(f"  ✗ Scales:       max diff {sc_diff:.2e}  (too large)")
-        ok = False
-
-    # f_dc (stored raw, should be bit-perfect)
-    dc_diff = np.abs(original.f_dc - reloaded.f_dc).max()
-    if dc_diff < 1e-6:
-        print(f"  ✓ f_dc:         max diff {dc_diff:.2e}")
-    else:
-        print(f"  ✗ f_dc:         max diff {dc_diff:.2e}  (too large)")
-        ok = False
-
-    # Rotations
-    rot_diff = np.abs(original.rotations - reloaded.rotations).max()
-    if rot_diff < 1e-5:
-        print(f"  ✓ Rotations:    max diff {rot_diff:.2e}")
-    else:
-        print(f"  ✗ Rotations:    max diff {rot_diff:.2e}  (too large)")
-        ok = False
-
-    # Clean up temp file
-    temp_path.unlink()
-
-    print()
-    if ok:
-        print("  PASS — exporter is lossless within float32 precision.")
-    else:
-        print("  FAIL — check the errors above.")
-
-    print("=" * 52)
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python splat_exporter.py path/to/scene.ply")
-        print("Runs a round-trip test: parse → export → parse → compare")
-        sys.exit(1)
-
-    test_round_trip(sys.argv[1])

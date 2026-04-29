@@ -178,7 +178,8 @@ def align_splat_depths(
     have a completely different scale. We need all faces at the same scale
     before rotating them into world space, or the seams won't meet.
 
-    The approach (simplified from SPAG4D's DA360 alignment):
+    The approach (simplified from SPAG4D's DA360 alignment 
+    https://github.com/cedarconnor/SPAG4d/blob/main/spag4d/sharp360.py):
     1. Project each splat's 3D position back to 2D pixel coordinates
     2. Sample the reference depth map at those pixel coordinates
     3. Compute a scale factor: reference_depth / splat_depth
