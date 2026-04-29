@@ -1,13 +1,4 @@
-from Stitcher import stitch_faces
-from SplatExporter import export_ply
-
-cloud = stitch_faces({
-    'front':  './ml-sharp/gaussians/front.ply',
-    'back':   './ml-sharp/gaussians/back.ply',
-    'right':  './ml-sharp/gaussians/right.ply',
-    'left':   './ml-sharp/gaussians/left.ply',
-    'top':    './ml-sharp/gaussians/top.ply',
-    'bottom': './ml-sharp/gaussians/bottom.ply',
-})
-
-export_ply(cloud, 'stitched_output.ply')
+from PIL import Image
+img = Image.open(".\2026-03-19 16_23_58.289016.png")
+img.save("panorama_check.jpg")
+print(f"Size: {img.size}")

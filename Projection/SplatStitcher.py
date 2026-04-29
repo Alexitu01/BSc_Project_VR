@@ -39,7 +39,7 @@ import math
 import numpy as np
 from pathlib import Path
 from PIL import Image
-from splat_parser import parse_ply, SplatCloud
+from SplatParser import parse_ply, SplatCloud
 
 
 PI = math.pi
@@ -86,8 +86,8 @@ FACE_ROTATIONS: dict[str, np.ndarray] = {
     'back':   _rot_y(180),
     'right':  _rot_y(90),
     'left':   _rot_y(-90),
-    'top':    _rot_x(90),
-    'bottom': _rot_x(-90),
+    #'top':    _rot_x(90),
+    #'bottom': _rot_x(-90),
 }
 
 # Horizontal angular span each face covers in world space (degrees)
@@ -172,7 +172,7 @@ def align_splat_depths(
     image_width: int,
     image_height: int,
     grid_size: int = 8,
-) -> SplatCloud:
+) -> tuple[SplatCloud, float]:
     """
     Scale each splat's depth to agree with the Depth Anything V2 depth map.
 
@@ -202,34 +202,50 @@ def align_splat_depths(
         grid_size:    NxN grid for the scale field
 
     Returns:
-        Depth-aligned SplatCloud (positions and scales rescaled)
+        Tuple of (depth-aligned SplatCloud, global_scale float).
+        All return paths return this tuple - the scale is used by the
+        caller to anchor subsequent faces to the same metric space.
     """
     positions = cloud.positions.astype(np.float64)
     depth_z = positions[:, 2]
-    N = len(positions)
 
     # Only process splats in front of the camera (positive z)
     valid = depth_z > 1e-6
 
     if valid.sum() < 32:
-        # Too few valid splats to align - return unchanged
+        # Too few valid splats to align - return unchanged with neutral scale
         print("    Warning: too few valid splats for depth alignment, skipping")
-        return cloud
+        return cloud, 1.0
 
     # Project splat centres to pixel coordinates
     # Pinhole projection: px = (x/z) * focal + cx
     cx = image_width  / 2.0
     cy = image_height / 2.0
 
-    px = np.where(valid, (positions[:, 0] / np.where(valid, depth_z, 1.0)) * focal_x + cx, 0.0)
-    py = np.where(valid, (positions[:, 1] / np.where(valid, depth_z, 1.0)) * focal_y + cy, 0.0)
+    # Use safe_z to avoid division by zero for behind-camera splats.
+    # Those positions are masked out by the `valid` array anyway, so
+    # the 1.0 fallback value never reaches the final result.
+    safe_z = np.where(valid, depth_z, 1.0)
+    px = np.where(valid, (positions[:, 0] / safe_z) * focal_x + cx, 0.0)
+    py = np.where(valid, (positions[:, 1] / safe_z) * focal_y + cy, 0.0)
 
-    # Keep only splats that project within the image bounds
-    in_bounds = valid & (px >= 0) & (px < image_width) & (py >= 0) & (py < image_height)
+    # The face was extracted with an overlap FOV wider than 90°, so splats
+    # near the edges project to pixel coordinates outside [0, face_size].
+    # fov_scale = tan(half_fov) = half_width / focal_x is the ratio by which
+    # the face extends beyond the standard 90° boundary. We allow projections
+    # up to margin_px outside the image bounds before discarding them.
+    fov_scale = cx / focal_x
+    margin_px = cx * (fov_scale - 1.0)
+
+    in_bounds = (
+        valid
+        & (px >= -margin_px) & (px < image_width  + margin_px)
+        & (py >= -margin_px) & (py < image_height + margin_px)
+    )
 
     if in_bounds.sum() < 32:
         print("    Warning: too few in-bounds splats for depth alignment, skipping")
-        return cloud
+        return cloud, 1.0
 
     # Use radial distance - not camera Z depth.
     # Monocular depth models like Depth Anything behave more like radial
@@ -238,19 +254,24 @@ def align_splat_depths(
     # and seam gaps.
     splat_radial_samples = np.linalg.norm(positions[in_bounds], axis=1)
 
-    # Sample reference depth at each splat's projected pixel
+    # Sample reference depth at each splat's projected pixel.
+    # Clamp to valid pixel range for the lookup even though in_bounds already
+    # restricts us - the overlap margin means px/py can be slightly outside
+    # [0, image_size-1] and we want a valid array index.
     px_int = np.clip(px[in_bounds].astype(np.int32), 0, image_width  - 1)
     py_int = np.clip(py[in_bounds].astype(np.int32), 0, image_height - 1)
 
-    # Resize depth map to face image dimensions if needed - no normalisation
+    # Resize depth map to face image dimensions if needed.
+    # Cast to float32 explicitly: PIL's fromarray requires float32 for mode-F
+    # images and will raise TypeError on float64 input.
     dh, dw = depth_map.shape
     if dh != image_height or dw != image_width:
         from PIL import Image as PILImage
-        depth_pil = PILImage.fromarray(depth_map)
+        depth_pil = PILImage.fromarray(depth_map.astype(np.float32))
         depth_pil = depth_pil.resize((image_width, image_height), PILImage.BILINEAR)
         depth_map_resized = np.array(depth_pil).astype(np.float32)
     else:
-        depth_map_resized = depth_map
+        depth_map_resized = depth_map.astype(np.float32)
 
     ref_depth_samples = depth_map_resized[py_int, px_int]
 
@@ -271,7 +292,14 @@ def align_splat_depths(
             rotations  = cloud.rotations,
         ), sf
 
+    # raw_scales, px_valid and py_valid are all indexed over the same subset:
+    # positions[in_bounds][valid_ratio]. Assert this so any future refactor
+    # that breaks the alignment fails loudly rather than silently corrupting
+    # the scale field.
     raw_scales = ref_depth_samples[valid_ratio] / splat_radial_samples[valid_ratio]
+    px_valid   = px[in_bounds][valid_ratio]
+    py_valid   = py[in_bounds][valid_ratio]
+    assert len(raw_scales) == len(px_valid) == len(py_valid)
 
     # Global robust median scale (trim top/bottom 5% to remove outliers)
     lo, hi = np.quantile(raw_scales, [0.05, 0.95])
@@ -286,10 +314,6 @@ def align_splat_depths(
     # the face. The grid values are then bilinearly interpolated to
     # give a smooth per-splat scale field.
     # ------------------------------------------------------------------
-    # Pixel coordinates of the in-bounds+valid_ratio splats
-    px_valid = px[in_bounds][valid_ratio]
-    py_valid = py[in_bounds][valid_ratio]
-
     cell_w = image_width  / grid_size
     cell_h = image_height / grid_size
     grid = np.full((grid_size, grid_size), global_scale, dtype=np.float64)
@@ -307,11 +331,14 @@ def align_splat_depths(
                 if ct.size > 0:
                     grid[gy, gx] = float(np.median(ct))
 
-    # Clamp grid values to reasonable range around global scale
-    # Very tight clamp - ±5% local variation only (this might have to be increased).
-    # Large local variation shears seams apart because adjacent faces
-    # compute different distortions independently.
-    grid = np.clip(grid, global_scale * 0.95, global_scale * 1.05)
+    # Clamp grid values to a reasonable range around the global scale.
+    # ±20% allows meaningful spatial correction for scenes with genuine
+    # depth variation across the face (e.g. a near wall on one side,
+    # open space on the other), while still preventing extreme local
+    # distortion that would shear seams apart. Cross-face scale drift
+    # is handled separately by the reference_scale correction in
+    # stitch_faces, so we don't need to be overly conservative here.
+    grid = np.clip(grid, global_scale * 0.80, global_scale * 1.20)
 
     # Bilinear interpolate grid to every splat's position
     all_px = np.clip(px, 0, image_width  - 1)
@@ -332,12 +359,20 @@ def align_splat_depths(
         grid[gy1, gx1] * wx       * wy
     ).astype(np.float32)
 
+    # Splats behind the camera (valid=False) had their px/py forced to 0.0,
+    # so they would otherwise receive whatever scale the grid happens to have
+    # at the image centre. Apply global_scale instead so they are consistently
+    # normalised without being distorted by a depth sample that has nothing
+    # to do with their actual position.
+    per_splat_scale[~valid] = global_scale
+
     # Apply per-splat scale to positions and splat sizes
     new_positions = (positions * per_splat_scale[:, None]).astype(np.float32)
     new_scales    = (cloud.scales * per_splat_scale[:, None]).astype(np.float32)
 
     print(f"    Depth aligned: global_scale={global_scale:.4f}  "
-          f"range=[{per_splat_scale.min():.4f}, {per_splat_scale.max():.4f}]")
+          f"grid_range=[{grid.min():.4f}, {grid.max():.4f}]  "
+          f"splat_range=[{per_splat_scale.min():.4f}, {per_splat_scale.max():.4f}]")
 
     return SplatCloud(
         count      = cloud.count,
@@ -352,7 +387,7 @@ def align_splat_depths(
 
 
 # ---------------------------------------------------------------------------
-# Edge fade (replaces hard Voronoi clipping)
+# Edge fade 
 # ---------------------------------------------------------------------------
 
 def apply_edge_fade(
@@ -398,6 +433,7 @@ def apply_edge_fade(
         SplatCloud with attenuated opacities near edges.
         No splats are removed - only opacities are modified.
     """
+
     positions = cloud.positions.astype(np.float64)
     depth_z   = positions[:, 2]
     cx = image_width  / 2.0
@@ -407,10 +443,15 @@ def apply_edge_fade(
     safe_z = np.where(depth_z > 1e-6, depth_z, 1.0)
     px = (positions[:, 0] / safe_z) * focal_x + cx
     py = (positions[:, 1] / safe_z) * focal_y + cy
+    
+    # Recover the fov_scale from the focal length and face size
+    # tan(half_fov) = (face_size/2) / focal
+    fov_scale_x = (image_width  / 2.0) / focal_x
+    fov_scale_y = (image_height / 2.0) / focal_y
 
-    # Normalise to [-1, 1] - (0,0) = image centre, (±1, ±1) = corners
-    nx = (px / image_width)  * 2.0 - 1.0
-    ny = (py / image_height) * 2.0 - 1.0
+    # Normalise to [-1, 1] at the 90° boundary (not the full face extent)
+    nx = (px / image_width  * 2.0 - 1.0) / fov_scale_x
+    ny = (py / image_height * 2.0 - 1.0) / fov_scale_y
 
     # Chebyshev distance: max(|nx|, |ny|) forms a square boundary
     # matching the face shape. r=0 at centre, r=1 at edge, r>1 in overlap.
@@ -583,11 +624,14 @@ def stitch_faces(
     Returns:
         Merged SplatCloud in world space, Y-up convention, ready for optimiser.
     """
+    #quick checker
+    print(f"focal_x={focal_x}, focal_y={focal_y}")
+
     expected = set(FACE_ROTATIONS.keys())
-    if set(face_plys.keys()) != expected:
-        raise ValueError(f"Expected faces {expected}, got {set(face_plys.keys())}")
-    if set(face_images.keys()) != expected:
-        raise ValueError(f"face_images must have same keys as face_plys")
+    #if set(face_plys.keys()) != expected:
+    #    raise ValueError(f"Expected faces {expected}, got {set(face_plys.keys())}")
+    #if set(face_images.keys()) != expected:
+    #    raise ValueError(f"face_images must have same keys as face_plys")
 
     transformed = []
     reference_scale = None  # shared metric anchor across all faces
