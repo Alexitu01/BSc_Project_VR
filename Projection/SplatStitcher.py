@@ -5,8 +5,8 @@ Takes 6 ml-sharp .ply files (one per cube face) and merges them into
 a single world-space SplatCloud ready for optimisation and export.
 
 Pipeline per face:
-  1. Parse .ply → SplatCloud
-  2. Run Depth Anything V2 on the face image → depth map
+  1. Parse .ply -> SplatCloud
+  2. Run Depth Anything V2 on the face image -> depth map
   3. Align splat depths to the depth map (robust median scale per grid cell)
   4. Voronoi border clipping (remove splats outside this face's angular zone)
   5. Rotate positions and orientations into world space
@@ -39,7 +39,7 @@ import math
 import numpy as np
 from pathlib import Path
 from PIL import Image
-from SplatParser import parse_ply, SplatCloud
+from splat_parser import parse_ply, SplatCloud
 
 
 PI = math.pi
@@ -73,11 +73,11 @@ def _identity() -> np.ndarray:
 #
 # The cubemap convention (matching your existing cubemap extractor):
 #   front  = looking along +Z
-#   back   = looking along -Z  → rotate 180° around Y
-#   right  = looking along +X  → rotate +90° around Y  (left-handed: positive = right)
-#   left   = looking along -X  → rotate -90° around Y
-#   top    = looking along +Y  → rotate +90° around X  (left-handed: positive = up)
-#   bottom = looking along -Y  → rotate -90° around X
+#   back   = looking along -Z  -> rotate 180° around Y
+#   right  = looking along +X  -> rotate +90° around Y  (left-handed: positive = right)
+#   left   = looking along -X  -> rotate -90° around Y
+#   top    = looking along +Y  -> rotate +90° around X  (left-handed: positive = up)
+#   bottom = looking along -Y  -> rotate -90° around X
 #
 # These signs were determined empirically from your data.
 
@@ -149,11 +149,13 @@ def predict_depth(face_image: np.ndarray) -> np.ndarray:
     # Invert: depth = max - raw  (keeps values positive)
     depth = depth.max() - depth
 
-    # Add small epsilon to avoid zeros - do NOT normalise per-face.
-    # Per-face normalisation would give each face a different nonlinear
-    # scale, making seam depths impossible to match across faces.
-    # The raw inverted values preserve relative scale across the scene.
-    depth = depth.astype(np.float32) + 1e-6
+    # No per-face normalisation - raw inverted values flow through unchanged.
+    # Per-face scaling (even percentile-based) creates inconsistent metric
+    # spaces across faces, which the reference_scale correction in stitch_faces
+    # then has to fight against. Keeping values raw means reference_scale
+    # is working with comparable numbers across all faces.
+    depth = depth.astype(np.float32)
+    depth += 1e-6  # avoid zeros
 
     return depth
 
@@ -178,8 +180,8 @@ def align_splat_depths(
     have a completely different scale. We need all faces at the same scale
     before rotating them into world space, or the seams won't meet.
 
-    The approach (simplified from SPAG4D's DA360 alignment 
-    https://github.com/cedarconnor/SPAG4d/blob/main/spag4d/sharp360.py):
+    The approach (simplified from SPAG4D's DA360 alignment):
+    https://github.com/cedarconnor/SPAG4d/blob/main/spag4d/sharp360.py
     1. Project each splat's 3D position back to 2D pixel coordinates
     2. Sample the reference depth map at those pixel coordinates
     3. Compute a scale factor: reference_depth / splat_depth
@@ -229,10 +231,12 @@ def align_splat_depths(
         print("    Warning: too few in-bounds splats for depth alignment, skipping")
         return cloud
 
-    # Use camera Z depth - not radial distance.
-    # Radial = sqrt(x²+y²+z²) diverges from perspective depth near corners.
-    # Camera Z is what the pinhole projection and the depth map both measure.
-    splat_z_samples = depth_z[in_bounds]
+    # Use radial distance - not camera Z depth.
+    # Monocular depth models like Depth Anything behave more like radial
+    # distance than camera-space Z. At cube face edges, Z becomes compressed
+    # while radial remains geometrically correct. Using Z causes edge expansion
+    # and seam gaps.
+    splat_radial_samples = np.linalg.norm(positions[in_bounds], axis=1)
 
     # Sample reference depth at each splat's projected pixel
     px_int = np.clip(px[in_bounds].astype(np.int32), 0, image_width  - 1)
@@ -250,8 +254,8 @@ def align_splat_depths(
 
     ref_depth_samples = depth_map_resized[py_int, px_int]
 
-    # Scale ratio: reference_z / splat_z
-    valid_ratio = (ref_depth_samples > 1e-4) & (splat_z_samples > 1e-6)
+    # Scale ratio: reference_depth / splat_radial
+    valid_ratio = (ref_depth_samples > 1e-4) & (splat_radial_samples > 1e-6)
     if valid_ratio.sum() < 32:
         print("    Warning: insufficient valid depth samples, using median normalisation")
         median_z = float(np.median(depth_z[depth_z > 1e-6]))
@@ -265,9 +269,9 @@ def align_splat_depths(
             opacities  = cloud.opacities,
             scales     = (cloud.scales * sf).astype(np.float32),
             rotations  = cloud.rotations,
-        )
+        ), sf
 
-    raw_scales = ref_depth_samples[valid_ratio] / splat_z_samples[valid_ratio]
+    raw_scales = ref_depth_samples[valid_ratio] / splat_radial_samples[valid_ratio]
 
     # Global robust median scale (trim top/bottom 5% to remove outliers)
     lo, hi = np.quantile(raw_scales, [0.05, 0.95])
@@ -304,8 +308,10 @@ def align_splat_depths(
                     grid[gy, gx] = float(np.median(ct))
 
     # Clamp grid values to reasonable range around global scale
-    # Tight clamp - prevents large local variation that shears seams apart
-    grid = np.clip(grid, global_scale * 0.7, global_scale * 1.3)
+    # Very tight clamp - ±5% local variation only (this might have to be increased).
+    # Large local variation shears seams apart because adjacent faces
+    # compute different distortions independently.
+    grid = np.clip(grid, global_scale * 0.95, global_scale * 1.05)
 
     # Bilinear interpolate grid to every splat's position
     all_px = np.clip(px, 0, image_width  - 1)
@@ -342,7 +348,7 @@ def align_splat_depths(
         opacities  = cloud.opacities,
         scales     = new_scales,
         rotations  = cloud.rotations,
-    )
+    ), global_scale
 
 
 # ---------------------------------------------------------------------------
@@ -537,7 +543,7 @@ def flip_y(cloud: SplatCloud) -> SplatCloud:
 def merge_clouds(clouds: list[SplatCloud]) -> SplatCloud:
     """Concatenate a list of SplatClouds into one."""
     total = sum(c.count for c in clouds)
-    print(f"  Merging {len(clouds)} faces → {total:,} total splats")
+    print(f"  Merging {len(clouds)} faces -> {total:,} total splats")
     return SplatCloud(
         count      = total,
         positions  = np.concatenate([c.positions  for c in clouds]),
@@ -566,8 +572,8 @@ def stitch_faces(
     Stitch 6 ml-sharp face .ply files into a single world-space SplatCloud.
 
     Args:
-        face_plys:           dict face_name → path to ml-sharp output .ply
-        face_images:         dict face_name → path to face image (for depth)
+        face_plys:           dict face_name -> path to ml-sharp output .ply
+        face_images:         dict face_name -> path to face image (for depth)
         focal_x:             horizontal focal length used during face extraction
         focal_y:             vertical focal length used during face extraction
         use_depth_alignment: whether to run Depth Anything V2 alignment
@@ -584,6 +590,7 @@ def stitch_faces(
         raise ValueError(f"face_images must have same keys as face_plys")
 
     transformed = []
+    reference_scale = None  # shared metric anchor across all faces
 
     for face_name in FACE_ROTATIONS:
         print(f"\n── Face: {face_name} ──")
@@ -600,9 +607,31 @@ def stitch_faces(
         if use_depth_alignment:
             print("  Running Depth Anything V2...")
             depth_map = predict_depth(face_img)
-            cloud = align_splat_depths(
+            cloud, face_scale = align_splat_depths(
                 cloud, depth_map, focal_x, focal_y, iw, ih, grid_size
             )
+
+            # Anchor all faces to the same metric scale as the first face.
+            # Depth Anything is only locally consistent - each face gets a
+            # different arbitrary scale. Without this, faces sit at different
+            # radii from the origin (the "cube exploded" effect).
+            if reference_scale is None:
+                reference_scale = face_scale
+                print(f"  Reference scale set: {reference_scale:.4f}")
+            else:
+                match_scale = reference_scale / face_scale
+                print(f"  Cross-face scale correction: {match_scale:.4f} "
+                      f"(face={face_scale:.4f}, ref={reference_scale:.4f})")
+                cloud = SplatCloud(
+                    count      = cloud.count,
+                    positions  = (cloud.positions * match_scale).astype(np.float32),
+                    normals    = cloud.normals,
+                    colors_rgb = cloud.colors_rgb,
+                    f_dc       = cloud.f_dc,
+                    opacities  = cloud.opacities,
+                    scales     = (cloud.scales * match_scale).astype(np.float32),
+                    rotations  = cloud.rotations,
+                )
         else:
             # Simple median normalisation fallback
             median_z = float(np.median(cloud.positions[:, 2][cloud.positions[:, 2] > 1e-6]))
@@ -618,6 +647,7 @@ def stitch_faces(
                 rotations  = cloud.rotations,
             )
             print(f"  Median normalised (scale={sf:.4f})")
+            face_scale = sf
 
         # 4. Edge fade - attenuate splat opacity near face edges.
         # Soft fading preserves overlap continuity and blends seams smoothly.
@@ -634,9 +664,9 @@ def stitch_faces(
     print(f"\n── Merging ──")
     merged = merge_clouds(transformed)
 
-    # 7. Flip Y: ml-sharp Y-down → viewer Y-up
+    # 7. Flip Y: ml-sharp Y-down -> viewer Y-up
     merged = flip_y(merged)
-    print("  Y-axis flipped (Y-down → Y-up)")
+    print("  Y-axis flipped (Y-down -> Y-up)")
 
     print(f"\n{'='*52}")
     print(f"Stitched cloud summary")

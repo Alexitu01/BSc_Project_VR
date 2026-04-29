@@ -3,7 +3,7 @@ splat_exporter.py
 -----------------
 Exports a SplatCloud back to a standard 3DGS .ply file.
 
-The output format matches the ml-sharp header exactly — no normals,
+The output format matches the ml-sharp header exactly - no normals,
 just the 14 core Gaussian attributes. This is compatible with:
     - aras-p UnityGaussianSplatting
     - SuperSplat viewer
@@ -16,7 +16,7 @@ IMPORTANT: The exporter writes raw (pre-decoded) values back to disk.
     - f_dc     is stored as-is     (never decoded, kept raw throughout)
     - rotation is stored as-is     (normalised quaternion, no transform)
 
-This means the round-trip is lossless — parse → export gives back
+This means the round-trip is lossless - parse → export gives back
 a file identical to the input (within float32 precision).
 
 Usage:
@@ -42,7 +42,7 @@ from SplatParser import SplatCloud, parse_ply
 
 # These are the properties we write, in this exact order.
 # Must match what the Unity renderer (aras-p) expects.
-# No normals — ml-sharp doesn't output them and the renderer doesn't need them.
+# No normals - ml-sharp doesn't output them and the renderer doesn't need them.
 OUTPUT_PROPS = [
     "x", "y", "z",
     "f_dc_0", "f_dc_1", "f_dc_2",
@@ -63,7 +63,7 @@ def _build_header(n_splats: int) -> bytes:
     Build the ASCII header for the output .ply file.
 
     The header is plain text that describes the binary data that follows.
-    It must end with 'end_header\n' — the binary block starts immediately
+    It must end with 'end_header\n' - the binary block starts immediately
     after that newline, with no padding or alignment.
 
     Returns bytes (not str) because we're writing to a binary file.
@@ -81,7 +81,7 @@ def _build_header(n_splats: int) -> bytes:
     lines.append("end_header")
 
     # Join with Unix newlines (\n) and encode to bytes.
-    # Important: use \n not \r\n — Windows line endings would add extra
+    # Important: use \n not \r\n - Windows line endings would add extra
     # bytes and shift the binary data offset, corrupting the file.
     header_str = "\n".join(lines) + "\n"
     return header_str.encode("ascii")
@@ -145,12 +145,12 @@ def export_ply(cloud: SplatCloud, path: str | Path) -> None:
     # Step 1: Re-encode values that were decoded during parsing
     #
     # The SplatCloud stores human-friendly decoded values:
-    #   opacities in [0, 1]        — easy to threshold and compare
-    #   scales    in real space    — easy to understand and modify
+    #   opacities in [0, 1]        - easy to threshold and compare
+    #   scales    in real space    - easy to understand and modify
     #
     # But the .ply format stores encoded values:
-    #   opacity   as logit         — what the renderer expects
-    #   scale     as log           — what the renderer expects
+    #   opacity   as logit         - what the renderer expects
+    #   scale     as log           - what the renderer expects
     #
     # f_dc and rotations were never decoded so they go straight through.
     # ------------------------------------------------------------------
@@ -161,10 +161,10 @@ def export_ply(cloud: SplatCloud, path: str | Path) -> None:
     # Step 2: Stack all attributes into a single (N, 14) array
     #
     # np.column_stack joins 1D and 2D arrays side by side along axis=1.
-    # The order must match OUTPUT_PROPS exactly — x, y, z, f_dc_0, ...
+    # The order must match OUTPUT_PROPS exactly - x, y, z, f_dc_0, ...
     #
     # After stacking, each row is one splat's complete data,
-    # laid out as 14 consecutive float32 values — exactly how the
+    # laid out as 14 consecutive float32 values - exactly how the
     # binary block needs to look.
     # ------------------------------------------------------------------
     data = np.column_stack([
@@ -194,7 +194,7 @@ def export_ply(cloud: SplatCloud, path: str | Path) -> None:
 
         # Write binary data block
         # .tobytes() serialises the numpy array to raw bytes in C order
-        # (row by row, which is what we want — splat by splat).
+        # (row by row, which is what we want - splat by splat).
         # Little-endian byte order is already correct because we're on
         # an x86 machine and numpy defaults to native (little) endian
         # for float32.
