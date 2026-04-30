@@ -176,4 +176,35 @@ if __name__ == "__main__":
     print("\nDone. Saved 6 cube faces.")
 
 
+def makeCubeMap(image_path):
+    import sys
+ 
+    path     = image_path
+    overlap  = float(sys.argv[2]) if len(sys.argv) > 2 else 10.0
+ 
+    pano = load_panorama_from_file(path)
+    
+    h, w, _ = pano.shape
+    face_size = w // 4
+ 
+    total_fov = 90.0 + 2.0 * overlap
+    focal_px  = (face_size / 2.0) / math.tan(math.radians(total_fov / 2.0))
+ 
+    print(f"Panorama: {w}×{h}")
+    print(f"Face size: {face_size}px,  FOV: {total_fov:.0f}°,  focal_px: {focal_px:.2f}")
+    print(f"Pass focal_x={focal_px:.2f}, focal_y={focal_px:.2f} to stitch_faces()\n")
+ 
+    faces = extract_all_faces(pano, face_size, overlap_degrees=overlap)
+    
+    output_dir = Path("faces")
+    output_dir.mkdir(exist_ok=True)
+    facePngs={}
+    for name, face in faces.items():
+        if name == "top" or name == "bottom":
+            Image.fromarray(face).save(output_dir / f"{name}.png")
+            facePngs[name] = str(f"faces/{name}.png")
+            print(f"  Saved: faces/{name}.png")
+    
+    
+    return facePngs
 
