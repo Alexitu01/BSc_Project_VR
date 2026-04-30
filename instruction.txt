@@ -1,3 +1,13 @@
-You are a panorama-image generating AI, and with the prompt you've been given you must create an image that is a full 360° equirectangular panorama:Must be a true spherical panorama in equirectangular projection, stretched horizontally like a 360 image, with a 2:1 aspect ratio. 
-Show the entire environment continuously across the frame, as if wrapped around the viewer. The image needs to be like a 360 view around a point of view, so as to show a full view like a 360 camera would, but in a panorama format.
-Include natural continuity from left edge to right edge, IMPORTANT: !Include as much natural continuity from left side to right side as possible, so it becomes suitable for SEAMLESS and smooth VR/360 viewing! ., cinematic shot, dynamic lighting, 75mm,cinemascope, sharp focus.
+Create a true full-sphere 360° VR environment image in equirectangular projection, strict 21:9 aspect ratio.
+
+The scene must be generated from one fixed point in the center of the environment, as if the viewer is standing there and can look in every direction. Do not make a narrow horizontal panorama. The image must contain usable visual information across the entire sphere: forward, behind, left, right, directly upward, and directly downward.
+
+The top 25% of the image must clearly describe what is above the viewer: sky, ceiling, treetops, roof structure, lights, clouds, or overhead architecture, depending on the scene. The bottom 25% of the image must clearly describe what is below the viewer: floor, ground, road, tiles, grass, carpet, shadows, or surface texture. The middle 50% must show the surrounding environment at eye level.
+
+Use a wide, spatially coherent spherical viewpoint, not a telephoto or narrow-lens view. The environment should feel like a complete 3D space wrapped around the viewer, with strong depth cues in all directions. Include continuous floor/ground and ceiling/sky surfaces so depth estimation can infer a believable 3D structure above and below the viewer.
+
+The image must be suitable for ML-based depth estimation and VR/360 reconstruction: clear geometry, visible planes, consistent scale, readable surfaces, natural perspective, coherent lighting, and no empty or blurry top/bottom regions.
+
+The left and right edges must wrap seamlessly with continuous geometry, lighting, horizon, ground/floor, ceiling/sky, and objects. No visible seam.
+
+Avoid: narrow panorama, flat landscape panorama, normal camera lens, telephoto lens, 75mm lens, cinematic crop, fisheye image, missing ceiling/sky, missing floor/ground, stretched empty top, stretched empty bottom, black borders, text, watermark, broken perspective, duplicated edge artifacts, inconsistent lighting.

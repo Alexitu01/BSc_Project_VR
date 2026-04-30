@@ -85,7 +85,10 @@ def generatePrompt(promptForAi):
     print(promptForAi)
 
     #System prompt containing instructions for the ai
-    SystemData = "You need to optimize the following prompt, making it descriptive in a way that is easy for an image generation ai to understand and perform better. Your response should only contain the rewritten prompt: "
+    SystemData = """You need to optimize the following prompt, making it specifically able to convey more details and convey a feeling of a full 360 degree environment. 
+    It must be able to describe an equirectangular projection in such a way that enhances the performance of a 3d image generation ai.
+    (This means the generated environment from your prompt, should be able to show a full 360 view around the viewer, while also being able to convey a full 360 view from top to bottom)
+    Your response should only contain the rewritten prompt: """
 
     #Call to the API with instructions and the prompt from the user.
     chat_completion = client.chat.completions.create(
@@ -107,7 +110,7 @@ def generateImages(promptForAi):
             config=GenerateContentConfig(
                 system_instruction=[imageSpecs], #Containst system instructions (see instruction.txt)
                 response_modalities=[Modality.TEXT, Modality.IMAGE],
-                image_config = ImageConfig(aspect_ratio="4:1")
+                image_config = ImageConfig(aspect_ratio="21:9")
             ),
         )
     except:
