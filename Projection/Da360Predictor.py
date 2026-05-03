@@ -31,7 +31,6 @@ import sys
 import numpy as np
 import torch
 import torch.nn.functional as F
-import networks
 from pathlib import Path
 
 
@@ -68,6 +67,8 @@ class DA360Predictor:
         da360_root = str(Path(da360_root).resolve())
         if da360_root not in sys.path:
             sys.path.insert(0, da360_root)
+
+        import networks #can't import this before the path is set up
 
         # Load checkpoint - same logic as test.py
         print(f"Loading DA360 from: {model_path}")
