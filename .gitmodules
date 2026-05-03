@@ -1,0 +1,6 @@
+[submodule "Projection/DA360"]
+	path = Projection/DA360
+	url = https://github.com/Insta360-Research-Team/DA360
+[submodule "Projection/ml-sharp"]
+	path = Projection/ml-sharp
+	url = https://github.com/apple/ml-sharp
