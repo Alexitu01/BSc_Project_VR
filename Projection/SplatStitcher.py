@@ -1,34 +1,33 @@
 """
 splat_stitcher.py
 -----------------
-Takes 6 ml-sharp .ply files (one per cube face) and merges them into
-a single world-space SplatCloud ready for optimisation and export.
+Stitches N ml-sharp .ply files (one per panorama slice) into a single
+world-space SplatCloud ready for optimisation and export.
 
-Pipeline per face:
+Unlike the cubemap approach, slices all face outward along the horizon
+at different azimuths. Each slice's rotation matrix is computed
+analytically from its azimuth angle - no hardcoded face table needed.
+This means any number of slices works automatically.
+
+Pipeline per slice:
   1. Parse .ply -> SplatCloud
-  2. Run Depth Anything V2 on the face image -> depth map
-  3. Align splat depths to the depth map (robust median scale per grid cell)
-  4. Voronoi border clipping (remove splats outside this face's angular zone)
-  5. Rotate positions and orientations into world space
-  6. Merge all faces + Y-flip to match viewer convention
+  2. Run Depth Anything V2 on the slice image -> depth map
+  3. Align splat depths to the depth map (radial distance, per-grid scale)
+  4. Cross-face scale correction (anchor all slices to first slice's scale)
+  5. Edge fade (attenuate opacity near slice edges for smooth blending)
+  6. Rotate positions and orientations into world space (from azimuth angle)
+  7. Merge all slices + Y-flip to match Unity/viewer Y-up convention
 
 Usage:
-    from splat_stitcher import stitch_faces
-    cloud = stitch_faces(
-        face_plys={
-            'front':  'face_front.ply',
-            'back':   'face_back.ply',
-            'right':  'face_right.ply',
-            'left':   'face_left.ply',
-            'top':    'face_top.ply',
-            'bottom': 'face_bottom.ply',
-        },
-        face_images={
-            'front':  'face_front.jpg',
+    from splat_stitcher import stitch_slices
+    cloud = stitch_slices(
+        slices=[
+            {"ply": "slice_000.ply", "image": "slice_000.png", "azimuth_deg": 0.0},
+            {"ply": "slice_001.ply", "image": "slice_001.png", "azimuth_deg": 60.0},
             ...
-        },
-        focal_x=740.0,   # from your cubemap extraction
-        focal_y=740.0,
+        ],
+        focal_x=412.0,
+        focal_y=412.0,
     )
 
 Dependencies:
@@ -42,287 +41,261 @@ from PIL import Image
 from SplatParser import parse_ply, SplatCloud
 
 
-PI = math.pi
+PI     = math.pi
+TWO_PI = 2.0 * PI
 
 
 # ---------------------------------------------------------------------------
-# Rotation matrix builders
+# Rotation matrix from azimuth angle
 # ---------------------------------------------------------------------------
 
-def _rot_x(degrees: float) -> np.ndarray:
-    r = np.radians(degrees)
-    c, s = np.cos(r), np.sin(r)
-    return np.array([[1,0,0],[0,c,-s],[0,s,c]], dtype=np.float64)
-
-def _rot_y(degrees: float) -> np.ndarray:
-    r = np.radians(degrees)
-    c, s = np.cos(r), np.sin(r)
-    return np.array([[c,0,s],[0,1,0],[-s,0,c]], dtype=np.float64)
-
-def _identity() -> np.ndarray:
-    return np.eye(3, dtype=np.float64)
-
-
-# ---------------------------------------------------------------------------
-# Face definitions
-# ---------------------------------------------------------------------------
-#
-# Each face is defined by its rotation matrix R (3x3).
-# R maps from view-local coordinates to world coordinates:
-#   world_point = R @ local_point
-#
-# The cubemap convention (matching your existing cubemap extractor):
-#   front  = looking along +Z
-#   back   = looking along -Z  -> rotate 180° around Y
-#   right  = looking along +X  -> rotate +90° around Y  (left-handed: positive = right)
-#   left   = looking along -X  -> rotate -90° around Y
-#   top    = looking along +Y  -> rotate +90° around X  (left-handed: positive = up)
-#   bottom = looking along -Y  -> rotate -90° around X
-#
-# These signs were determined empirically from your data.
-
-FACE_ROTATIONS: dict[str, np.ndarray] = {
-    'front':  _identity(),
-    'back':   _rot_y(180),
-    'right':  _rot_y(90),
-    'left':   _rot_y(-90),
-    #'top':    _rot_x(90),
-    #'bottom': _rot_x(-90),
-}
-
-# Horizontal angular span each face covers in world space (degrees)
-# For a cubemap, each face covers 90° of horizontal FOV
-FACE_SPAN_DEGREES = 90.0
-
-
-# ---------------------------------------------------------------------------
-# Depth Anything V2 loader (lazy - loaded once on first use)
-# ---------------------------------------------------------------------------
-
-_depth_pipe = None
-
-def _get_depth_pipe():
+def rotation_matrix_from_azimuth(azimuth_deg: float) -> np.ndarray:
     """
-    Load Depth Anything V2 Small via HuggingFace transformers.
-    Loaded lazily so import doesn't trigger a download.
+    Build a 3x3 rotation matrix for a horizon-facing slice at the given azimuth.
 
-    Uses the Small model for speed - swap to 'Base' or 'Large' for
-    better quality at the cost of memory and speed.
-    """
-    global _depth_pipe
-    if _depth_pipe is None:
-        from transformers import pipeline
-        print("  Loading Depth Anything V2 (downloads on first run)...")
-        _depth_pipe = pipeline(
-            task="depth-estimation",
-            model="depth-anything/Depth-Anything-V2-Small-hf",
-        )
-        print("  Depth model loaded.")
-    return _depth_pipe
+    The slice camera uses ml-sharp convention:
+        forward = [sin(az), 0, cos(az)]   - outward along horizon
+        right   = [cos(az), 0, -sin(az)]  - rightward perpendicular
+        down    = [0, 1, 0]               - Y-down (cuz images)
 
+    The rotation matrix R has these as columns:
+        R = [right | down | forward]
 
-def predict_depth(face_image: np.ndarray) -> np.ndarray:
-    """
-    Run Depth Anything V2 on a face image.
+    So world_point = R @ local_point maps from the slice's local camera
+    space into world space. This is the same convention used in the
+    face extractor, so the two are guaranteed to be consistent.
 
     Args:
-        face_image: (H, W, 3) uint8 RGB face image
+        azimuth_deg: horizontal angle in degrees
+                     0° = looking along +Z (forward)
+                     90° = looking along +X (right)
+                     180° = looking along -Z (back)
+                     270° = looking along -X (left)
 
     Returns:
-        (H, W) float32 depth map - larger values = farther away.
-
-    Note: Depth Anything outputs INVERSE depth (disparity-like) by default
-    from the HuggingFace pipeline. We invert it here to get depth where
-    larger = farther. This matches the convention of ml-sharp's z coordinates.
+        (3, 3) float64 rotation matrix
     """
-    pipe = _get_depth_pipe()
-    pil_image = Image.fromarray(face_image)
+    az = math.radians(azimuth_deg)
 
-    # Pipeline returns a PIL depth image - convert to float numpy
-    result = pipe(pil_image)
-    depth_pil = result["depth"]
-    depth = np.array(depth_pil).astype(np.float32)
+    forward = np.array([ math.sin(az), 0.0,  math.cos(az)], dtype=np.float64)
+    right   = np.array([ math.cos(az), 0.0, -math.sin(az)], dtype=np.float64)
+    down    = np.array([ 0.0,          1.0,  0.0          ], dtype=np.float64)
 
-    # HuggingFace depth-anything pipeline returns values where
-    # LARGER = CLOSER (disparity convention).
-    # We need LARGER = FARTHER to match ml-sharp's z convention.
-    # Invert: depth = max - raw  (keeps values positive)
-    depth = depth.max() - depth
+    # Columns = [right, down, forward]
+    return np.column_stack([right, down, forward])
 
-    # No per-face normalisation - raw inverted values flow through unchanged.
-    # Per-face scaling (even percentile-based) creates inconsistent metric
-    # spaces across faces, which the reference_scale correction in stitch_faces
-    # then has to fight against. Keeping values raw means reference_scale
-    # is working with comparable numbers across all faces.
-    depth = depth.astype(np.float32)
-    depth += 1e-6  # avoid zeros
 
-    return depth
+# ---------------------------------------------------------------------------
+# DA360 depth predictor
+# ---------------------------------------------------------------------------
+#
+# DA360 runs ONCE on the full panorama and produces a globally consistent
+# disparity map. The stitcher samples this map at each slice's projected
+# pixel locations - all slices reference the same depth map so cross-slice
+# scale is consistent without needing the reference_scale hack.
+#
+# Usage: call load_da360() once before stitching, then pass the returned
+# disparity map to stitch_slices() via the da360_disparity argument.
+
+def load_da360(
+    model_path: str,
+    da360_root: str,
+    device = None,
+):
+    """
+    Load the DA360 predictor. Call once before stitching.
+
+    Args:
+        model_path: path to DA360 .pth checkpoint
+        da360_root: path to cloned DA360 repository root
+        device:     torch device (defaults to CUDA if available)
+
+    Returns:
+        DA360Predictor instance - call .predict(panorama_rgb) on it
+    """
+    from Da360Predictor import DA360Predictor
+    return DA360Predictor(model_path, da360_root, device)
+
+
+def sample_da360_for_slice(
+    da360_disparity: np.ndarray,
+    azimuth_deg:     float,
+    focal_x:         float,
+    focal_y:         float,
+    image_width:     int,
+    image_height:    int,
+    pano_width:      int,
+    pano_height:     int,
+) -> np.ndarray:
+    """
+    Extract the DA360 disparity values(inverse depth valeus) for one perspective slice.
+
+    DA360 produces a full panoramic disparity map. For each pixel in
+    the slice output image, we compute which panorama pixel it came
+    from (using the same perspective projection as the face extractor)
+    and sample the DA360 map there.
+
+    This gives a per-slice disparity map in slice-image coordinates
+    that can be passed directly to align_splat_depths.
+
+    essentially it's extract_slice but for depth values instead of colours.
+
+    Args:
+        da360_disparity: (H_pano, W_pano) float32 panoramic disparity
+        azimuth_deg:     slice centre azimuth in degrees
+        focal_x:         horizontal focal length in pixels
+        focal_y:         vertical focal length in pixels
+        image_width:     slice image width
+        image_height:    slice image height
+        pano_width:      full panorama width
+        pano_height:     full panorama height
+
+    Returns:
+        (image_height, image_width) float32 disparity map for this slice
+    """
+    from scipy.ndimage import map_coordinates #Radians, just like in Face extractor
+    az = math.radians(azimuth_deg)
+
+    # Camera axes - basically identical same face extractor
+    forward = np.array([ math.sin(az), 0.0,  math.cos(az)], dtype=np.float64)
+    right   = np.array([ math.cos(az), 0.0, -math.sin(az)], dtype=np.float64)
+    down    = np.array([ 0.0,          1.0,  0.0          ], dtype=np.float64)
+    R       = np.column_stack([right, down, forward])
+
+    # Pixel grid
+    u  = np.arange(image_width,  dtype=np.float64) + 0.5
+    v  = np.arange(image_height, dtype=np.float64) + 0.5
+    uu, vv = np.meshgrid(u, v, indexing="xy")
+
+    cx      = image_width  / 2.0
+    cy      = image_height / 2.0
+    local_x = (uu - cx) / focal_x
+    local_y = (vv - cy) / focal_y
+    local_z = np.ones_like(uu)
+
+    wx = R[0,0]*local_x + R[0,1]*local_y + R[0,2]*local_z
+    wy = R[1,0]*local_x + R[1,1]*local_y + R[1,2]*local_z
+    wz = R[2,0]*local_x + R[2,1]*local_y + R[2,2]*local_z
+
+    norm = np.maximum(np.sqrt(wx**2 + wy**2 + wz**2), 1e-12)
+    wx /= norm; wy /= norm; wz /= norm
+
+    longitude = np.arctan2(wx, wz)
+    latitude  = np.arcsin(np.clip(wy, -1.0, 1.0))
+
+    sample_x = (longitude / TWO_PI + 0.5) * pano_width  - 0.5 
+    sample_y = (latitude  / PI     + 0.5) * pano_height - 0.5
+
+    # This is where it differs, we don't sample RGB values but disparity values from the DA360 map as flaots in a 2D array matching the slice size
+    slice_disp = map_coordinates(
+        da360_disparity,
+        [sample_y, sample_x],
+        order=1,
+        mode='wrap',
+    ).astype(np.float32)
+
+    return slice_disp
 
 
 # ---------------------------------------------------------------------------
 # Depth alignment
 # ---------------------------------------------------------------------------
 
-def align_splat_depths(
-    cloud: SplatCloud,
-    depth_map: np.ndarray,
-    focal_x: float,
-    focal_y: float,
-    image_width: int,
-    image_height: int,
-    grid_size: int = 8,
-) -> tuple[SplatCloud, float]:
+def align_splat_depths_da360(
+    cloud,
+    da360_disp,
+    focal_x,
+    focal_y,
+    image_width,
+    image_height,
+    grid_size=8,
+):
     """
-    Scale each splat's depth to agree with the Depth Anything V2 depth map.
+    Align splat depths using DA360 raw disparity.
 
-    The problem: ml-sharp outputs splats at arbitrary scale. Each face may
-    have a completely different scale. We need all faces at the same scale
-    before rotating them into world space, or the seams won't meet.
+    DA360 outputs disparity where larger = closer.
+    ml-sharp outputs positions where larger z = farther.
 
-    The approach (simplified from SPAG4D's DA360 alignment):
-    https://github.com/cedarconnor/SPAG4d/blob/main/spag4d/sharp360.py
-    1. Project each splat's 3D position back to 2D pixel coordinates
-    2. Sample the reference depth map at those pixel coordinates
-    3. Compute a scale factor: reference_depth / splat_depth
-    4. Apply that scale factor to positions and splat sizes
-
-    We do this on a coarse grid (default 8x8) rather than per-splat,
-    which gives a smooth spatially-varying scale field. This handles
-    scenes where depth varies significantly across the face (e.g. a
-    corridor with a close wall on one side and open space on the other).
-
-    Args:
-        cloud:        SplatCloud in view-local coordinates
-        depth_map:    (H, W) float32 depth map from Depth Anything V2
-        focal_x:      horizontal focal length in pixels
-        focal_y:      vertical focal length in pixels
-        image_width:  face image width
-        image_height: face image height
-        grid_size:    NxN grid for the scale field
-
-    Returns:
-        Tuple of (depth-aligned SplatCloud, global_scale float).
-        All return paths return this tuple - the scale is used by the
-        caller to anchor subsequent faces to the same metric space.
+    Correct scale: scale = 1 / (disparity * radial)
+    This maps ml-sharp radial distances to DA360 metric depth space,
+    making all slices share the same consistent scale automatically.
     """
-    positions = cloud.positions.astype(np.float64)
-    depth_z = positions[:, 2]
+    positions = cloud.positions.astype(float)
+    depth_z   = positions[:, 2]
+    N         = len(positions)
 
-    # Only process splats in front of the camera (positive z)
     valid = depth_z > 1e-6
-
     if valid.sum() < 32:
-        # Too few valid splats to align - return unchanged with neutral scale
-        print("    Warning: too few valid splats for depth alignment, skipping")
         return cloud, 1.0
 
-    # Project splat centres to pixel coordinates
-    # Pinhole projection: px = (x/z) * focal + cx
-    cx = image_width  / 2.0
-    cy = image_height / 2.0
-
-    # Use safe_z to avoid division by zero for behind-camera splats.
-    # Those positions are masked out by the `valid` array anyway, so
-    # the 1.0 fallback value never reaches the final result.
+    cx     = image_width  / 2.0
+    cy     = image_height / 2.0
     safe_z = np.where(valid, depth_z, 1.0)
-    px = np.where(valid, (positions[:, 0] / safe_z) * focal_x + cx, 0.0)
-    py = np.where(valid, (positions[:, 1] / safe_z) * focal_y + cy, 0.0)
-
-    # The face was extracted with an overlap FOV wider than 90°, so splats
-    # near the edges project to pixel coordinates outside [0, face_size].
-    # fov_scale = tan(half_fov) = half_width / focal_x is the ratio by which
-    # the face extends beyond the standard 90° boundary. We allow projections
-    # up to margin_px outside the image bounds before discarding them.
-    fov_scale = cx / focal_x
-    margin_px = cx * (fov_scale - 1.0)
+    px     = (positions[:, 0] / safe_z) * focal_x + cx
+    py     = (positions[:, 1] / safe_z) * focal_y + cy
 
     in_bounds = (
-        valid
-        & (px >= -margin_px) & (px < image_width  + margin_px)
-        & (py >= -margin_px) & (py < image_height + margin_px)
+        valid &
+        (px >= 0) & (px < image_width) &
+        (py >= 0) & (py < image_height)
     )
 
     if in_bounds.sum() < 32:
-        print("    Warning: too few in-bounds splats for depth alignment, skipping")
         return cloud, 1.0
 
-    # Use radial distance - not camera Z depth.
-    # Monocular depth models like Depth Anything behave more like radial
-    # distance than camera-space Z. At cube face edges, Z becomes compressed
-    # while radial remains geometrically correct. Using Z causes edge expansion
-    # and seam gaps.
-    splat_radial_samples = np.linalg.norm(positions[in_bounds], axis=1)
+    splat_radial = np.linalg.norm(positions[in_bounds], axis=1)
 
-    # Sample reference depth at each splat's projected pixel.
-    # Clamp to valid pixel range for the lookup even though in_bounds already
-    # restricts us - the overlap margin means px/py can be slightly outside
-    # [0, image_size-1] and we want a valid array index.
-    px_int = np.clip(px[in_bounds].astype(np.int32), 0, image_width  - 1)
-    py_int = np.clip(py[in_bounds].astype(np.int32), 0, image_height - 1)
+    from scipy.ndimage import map_coordinates
 
-    # Resize depth map to face image dimensions if needed.
-    # Cast to float32 explicitly: PIL's fromarray requires float32 for mode-F
-    # images and will raise TypeError on float64 input.
-    dh, dw = depth_map.shape
+    dh, dw = da360_disp.shape
     if dh != image_height or dw != image_width:
-        from PIL import Image as PILImage
-        depth_pil = PILImage.fromarray(depth_map.astype(np.float32))
-        depth_pil = depth_pil.resize((image_width, image_height), PILImage.BILINEAR)
-        depth_map_resized = np.array(depth_pil).astype(np.float32)
+        disp_pil = Image.fromarray(da360_disp).resize(
+            (image_width, image_height), Image.BILINEAR
+        )
+        disp_r = np.array(disp_pil).astype(np.float32)
     else:
-        depth_map_resized = depth_map.astype(np.float32)
+        disp_r = da360_disp
 
-    ref_depth_samples = depth_map_resized[py_int, px_int]
+    # Bilinear sampling - critical at Voronoi boundaries where adjacent
+    # slices must agree on disparity values. Nearest-neighbour snapping
+    # creates inconsistent scale at exactly the seam location.
+    ref_disp = map_coordinates(
+        disp_r,
+        [py[in_bounds], px[in_bounds]],
+        order=1,
+        mode='nearest',
+    ).astype(np.float32)
 
-    # Scale ratio: reference_depth / splat_radial
-    valid_ratio = (ref_depth_samples > 1e-4) & (splat_radial_samples > 1e-6)
+    valid_ratio = (ref_disp > 1e-4) & (splat_radial > 1e-6)
     if valid_ratio.sum() < 32:
-        print("    Warning: insufficient valid depth samples, using median normalisation")
-        median_z = float(np.median(depth_z[depth_z > 1e-6]))
-        sf = 1.0 / median_z if median_z > 1e-6 else 1.0
-        return SplatCloud(
-            count      = cloud.count,
-            positions  = (positions * sf).astype(np.float32),
-            normals    = cloud.normals,
-            colors_rgb = cloud.colors_rgb,
-            f_dc       = cloud.f_dc,
-            opacities  = cloud.opacities,
-            scales     = (cloud.scales * sf).astype(np.float32),
-            rotations  = cloud.rotations,
-        ), sf
+        print("    Warning: insufficient DA360 samples, skipping alignment")
+        return cloud, 1.0
 
-    # raw_scales, px_valid and py_valid are all indexed over the same subset:
-    # positions[in_bounds][valid_ratio]. Assert this so any future refactor
-    # that breaks the alignment fails loudly rather than silently corrupting
-    # the scale field.
-    raw_scales = ref_depth_samples[valid_ratio] / splat_radial_samples[valid_ratio]
-    px_valid   = px[in_bounds][valid_ratio]
-    py_valid   = py[in_bounds][valid_ratio]
-    assert len(raw_scales) == len(px_valid) == len(py_valid)
+    # DA360 gives disparity not depth, meaning larger is closer (depth = 1 / disparity)
+    raw_scales = 1.0 / (ref_disp[valid_ratio] * splat_radial[valid_ratio])
 
-    # Global robust median scale (trim top/bottom 5% to remove outliers)
-    lo, hi = np.quantile(raw_scales, [0.05, 0.95])
+    lo, hi  = np.quantile(raw_scales, [0.05, 0.95])
     trimmed = raw_scales[(raw_scales >= lo) & (raw_scales <= hi)]
-    global_scale = float(np.median(trimmed)) if trimmed.size > 0 else float(np.median(raw_scales))
+    global_scale = float(np.median(trimmed)) if trimmed.size > 0 \
+                   else float(np.median(raw_scales))
 
-    # ------------------------------------------------------------------
-    # Build a coarse NxN grid of local scale factors
-    #
-    # Rather than one global scale for the whole face, we compute a
-    # per-cell median. This handles scenes where depth varies across
-    # the face. The grid values are then bilinearly interpolated to
-    # give a smooth per-splat scale field.
-    # ------------------------------------------------------------------
-    cell_w = image_width  / grid_size
-    cell_h = image_height / grid_size
-    grid = np.full((grid_size, grid_size), global_scale, dtype=np.float64)
+    px_valid = px[in_bounds][valid_ratio]
+    py_valid = py[in_bounds][valid_ratio]
 
-    for gy in range(grid_size):
-        for gx in range(grid_size):
+    # Aspect-ratio-aware grid
+    # For a 396x672 slice: grid_cols=8, grid_rows=round(8*672/396)=14
+    # This gives ~50px cells vertically instead of ~84px, improving vertical accuracy
+    grid_cols = grid_size
+    grid_rows = max(1, round(grid_size * image_height / image_width))
+    cell_w    = image_width  / grid_cols
+    cell_h    = image_height / grid_rows
+    grid      = np.full((grid_rows, grid_cols), global_scale, dtype=float)
+
+    for gy in range(grid_rows):
+        for gx in range(grid_cols):
             in_cell = (
-                (px_valid >= gx * cell_w) & (px_valid < (gx + 1) * cell_w) &
-                (py_valid >= gy * cell_h) & (py_valid < (gy + 1) * cell_h)
+                (px_valid >= gx * cell_w) & (px_valid < (gx+1) * cell_w) &
+                (py_valid >= gy * cell_h) & (py_valid < (gy+1) * cell_h)
             )
             if in_cell.sum() >= 4:
                 cs = raw_scales[in_cell]
@@ -331,160 +304,92 @@ def align_splat_depths(
                 if ct.size > 0:
                     grid[gy, gx] = float(np.median(ct))
 
-    # Clamp grid values to a reasonable range around the global scale.
-    # ±20% allows meaningful spatial correction for scenes with genuine
-    # depth variation across the face (e.g. a near wall on one side,
-    # open space on the other), while still preventing extreme local
-    # distortion that would shear seams apart. Cross-face scale drift
-    # is handled separately by the reference_scale correction in
-    # stitch_faces, so we don't need to be overly conservative here.
-    grid = np.clip(grid, global_scale * 0.80, global_scale * 1.20)
+    # 0.1x to 10x range, less usually leads to flat looking geometry, (if seam issues pop up try lowering this)
+    grid = np.clip(grid, global_scale * 0.1, global_scale * 10.0)
 
-    # Bilinear interpolate grid to every splat's position
     all_px = np.clip(px, 0, image_width  - 1)
     all_py = np.clip(py, 0, image_height - 1)
-    gxc = all_px / cell_w - 0.5
-    gyc = all_py / cell_h - 0.5
-    gx0 = np.clip(np.floor(gxc).astype(np.int32), 0, grid_size - 1)
-    gy0 = np.clip(np.floor(gyc).astype(np.int32), 0, grid_size - 1)
-    gx1 = np.clip(gx0 + 1, 0, grid_size - 1)
-    gy1 = np.clip(gy0 + 1, 0, grid_size - 1)
-    wx = np.clip(gxc - gx0, 0.0, 1.0)
-    wy = np.clip(gyc - gy0, 0.0, 1.0)
+    gxc    = all_px / cell_w - 0.5
+    gyc    = all_py / cell_h - 0.5
+    gx0    = np.clip(np.floor(gxc).astype(np.int32), 0, grid_cols - 1)
+    gy0    = np.clip(np.floor(gyc).astype(np.int32), 0, grid_rows - 1)
+    gx1    = np.clip(gx0 + 1, 0, grid_cols - 1)
+    gy1    = np.clip(gy0 + 1, 0, grid_rows - 1)
+    wx     = np.clip(gxc - gx0, 0.0, 1.0)
+    wy     = np.clip(gyc - gy0, 0.0, 1.0)
 
     per_splat_scale = (
-        grid[gy0, gx0] * (1 - wx) * (1 - wy) +
-        grid[gy0, gx1] * wx       * (1 - wy) +
-        grid[gy1, gx0] * (1 - wx) * wy       +
-        grid[gy1, gx1] * wx       * wy
+        grid[gy0, gx0] * (1-wx) * (1-wy) +
+        grid[gy0, gx1] * wx     * (1-wy) +
+        grid[gy1, gx0] * (1-wx) * wy     +
+        grid[gy1, gx1] * wx     * wy
     ).astype(np.float32)
 
-    # Splats behind the camera (valid=False) had their px/py forced to 0.0,
-    # so they would otherwise receive whatever scale the grid happens to have
-    # at the image centre. Apply global_scale instead so they are consistently
-    # normalised without being distorted by a depth sample that has nothing
-    # to do with their actual position.
-    per_splat_scale[~valid] = global_scale
-
-    # Apply per-splat scale to positions and splat sizes
-    new_positions = (positions * per_splat_scale[:, None]).astype(np.float32)
-    new_scales    = (cloud.scales * per_splat_scale[:, None]).astype(np.float32)
-
-    print(f"    Depth aligned: global_scale={global_scale:.4f}  "
-          f"grid_range=[{grid.min():.4f}, {grid.max():.4f}]  "
-          f"splat_range=[{per_splat_scale.min():.4f}, {per_splat_scale.max():.4f}]")
+    print(f"    DA360 aligned: global_scale={global_scale:.6f}  "
+          f"range=[{per_splat_scale.min():.6f}, {per_splat_scale.max():.6f}]")
 
     return SplatCloud(
         count      = cloud.count,
-        positions  = new_positions,
+        positions  = (positions * per_splat_scale[:, None]).astype(np.float32),
         normals    = cloud.normals,
         colors_rgb = cloud.colors_rgb,
         f_dc       = cloud.f_dc,
         opacities  = cloud.opacities,
-        scales     = new_scales,
+        scales     = (cloud.scales * per_splat_scale[:, None]).astype(np.float32),
         rotations  = cloud.rotations,
     ), global_scale
 
 
-# ---------------------------------------------------------------------------
-# Edge fade 
-# ---------------------------------------------------------------------------
 
-def apply_edge_fade(
-    cloud: SplatCloud,
-    focal_x: float,
-    focal_y: float,
-    image_width: int,
-    image_height: int,
-    fade_start: float = 0.75,
-) -> SplatCloud:
+def voronoi_clip(cloud: SplatCloud, span_degrees: float) -> SplatCloud:
     """
-    Attenuate opacity of splats near the face edges rather than hard-clipping.
+    Hard Voronoi clipping, keep only splats within the natural span, reduces duplicate geometry.
 
-    Hard Voronoi clipping creates cracks and sparse regions at seams because
-    the boundary is binary - a splat is either kept or discarded. This creates
-    visible face boundaries especially at corners.
-
-    Soft edge fading instead reduces the opacity of splats near the edge of
-    the face's FOV zone. Splats near the centre stay fully opaque. Splats
-    near the edge fade out. When two overlapping faces both have faded edges,
-    the overlap region blends smoothly rather than cutting sharply.
-
-    How it works:
-    1. Project each splat to normalised image coordinates [-1, 1]
-    2. Compute how far the splat is from the face centre (Chebyshev distance)
-       - this is max(|nx|, |ny|) which forms a square boundary matching the
-       face shape, rather than a circle
-    3. Apply a linear fade from fade_start to 1.0
-       - splats within fade_start of centre are fully opaque
-       - splats at the edge (r=1.0) have zero weight
-       - splats beyond the edge (overlap region) fade to zero
+    Clips to exactly span_degrees horizontal FOV (e.g. 60° for 6 slices).
+    Done BEFORE rotation so we work in view-local space where depth is +Z
+    and horizontal angle is simply atan2(x, z).
+    Because DA360 makes adjacent slices geometrically consistent, hard
+    clipping at the natural span boundary *shouldn't* create depth discontinuities.
 
     Args:
         cloud:        SplatCloud in view-local coordinates
-        focal_x:      horizontal focal length in pixels
-        focal_y:      vertical focal length in pixels
-        image_width:  face image width in pixels
-        image_height: face image height in pixels
-        fade_start:   normalised distance from centre where fade begins
-                      0.75 means inner 75% is fully opaque, outer 25% fades
+        span_degrees: natural horizontal span (360 / n_slices)
 
     Returns:
-        SplatCloud with attenuated opacities near edges.
-        No splats are removed - only opacities are modified.
+        Clipped SplatCloud with overlap region removed
     """
-
-    positions = cloud.positions.astype(np.float64)
+    positions = cloud.positions
     depth_z   = positions[:, 2]
-    cx = image_width  / 2.0
-    cy = image_height / 2.0
+    in_front  = depth_z > 1e-6
 
-    # Project splat centres to pixel coordinates
-    safe_z = np.where(depth_z > 1e-6, depth_z, 1.0)
-    px = (positions[:, 0] / safe_z) * focal_x + cx
-    py = (positions[:, 1] / safe_z) * focal_y + cy
-    
-    # Recover the fov_scale from the focal length and face size
-    # tan(half_fov) = (face_size/2) / focal
-    fov_scale_x = (image_width  / 2.0) / focal_x
-    fov_scale_y = (image_height / 2.0) / focal_y
+    # Keep splats within ±half_span of the forward direction
+    half = span_degrees / 2.0
+    h_limit = math.tan(math.radians(half))
+    h_ratio = np.abs(positions[:, 0]) / np.where(in_front, depth_z, 1.0)
+    mask = in_front & (h_ratio <= h_limit)
 
-    # Normalise to [-1, 1] at the 90° boundary (not the full face extent)
-    nx = (px / image_width  * 2.0 - 1.0) / fov_scale_x
-    ny = (py / image_height * 2.0 - 1.0) / fov_scale_y
-
-    # Chebyshev distance: max(|nx|, |ny|) forms a square boundary
-    # matching the face shape. r=0 at centre, r=1 at edge, r>1 in overlap.
-    r = np.maximum(np.abs(nx), np.abs(ny))
-
-    # Linear fade: 1.0 inside fade_start, 0.0 at r=1.0, clipped to [0,1]
-    # weight = (1 - r) / (1 - fade_start)  then clipped
-    weight = np.clip((1.0 - r) / (1.0 - fade_start), 0.0, 1.0).astype(np.float32)
-
-    # Splats behind camera get zero weight
-    weight[depth_z <= 1e-6] = 0.0
-
-    new_opacities = cloud.opacities * weight
-
-    n_faded = int((weight < 1.0).sum())
-    print(f"    Edge fade: {n_faded:,} splats attenuated "
-          f"({100*n_faded/cloud.count:.1f}%)")
+    #Debug info printed to terminal
+    n_before = cloud.count
+    n_after  = int(mask.sum())
+    print(f"    Voronoi clip ({span_degrees:.0f}°): {n_before:,} -> {n_after:,} "
+          f"({100*(n_before-n_after)/n_before:.1f}% removed)")
 
     return SplatCloud(
-        count      = cloud.count,
-        positions  = cloud.positions,
-        normals    = cloud.normals,
-        colors_rgb = cloud.colors_rgb,
-        f_dc       = cloud.f_dc,
-        opacities  = new_opacities,
-        scales     = cloud.scales,
-        rotations  = cloud.rotations,
+        count      = n_after,
+        positions  = cloud.positions [mask],
+        normals    = cloud.normals   [mask],
+        colors_rgb = cloud.colors_rgb[mask],
+        f_dc       = cloud.f_dc      [mask],
+        opacities  = cloud.opacities [mask],
+        scales     = cloud.scales    [mask],
+        rotations  = cloud.rotations [mask],
     )
 
 
-# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Rotation helpers
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------
+# this but dumber https://www.johndcook.com/blog/2025/05/07/quaternions-and-rotation-matrices/ 
 
 def matrix_to_quaternion(R: np.ndarray) -> np.ndarray:
     """Convert 3x3 rotation matrix to unit quaternion (w, x, y, z)."""
@@ -534,15 +439,25 @@ def quaternion_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     return (result / np.where(norms > 0, norms, 1.0)).astype(np.float32)
 
 
-def transform_face(cloud: SplatCloud, face_name: str) -> SplatCloud:
+def transform_slice(cloud: SplatCloud, azimuth_deg: float) -> SplatCloud:
     """
-    Rotate a face's SplatCloud from view-local space into world space.
-    Rotates both positions and orientation quaternions.
+    Rotate a slice's SplatCloud from local camera space into world space.
+
+    The rotation matrix is computed analytically from the azimuth angle -
+    no hardcoded face table. This works for any number of slices.
+
+    Rotates both positions and orientation quaternions so splat ellipsoids
+    point correctly in world space.
     """
-    R = FACE_ROTATIONS[face_name]
+    R = rotation_matrix_from_azimuth(azimuth_deg)
+
+    # Rotate positions: R @ each position vector
     new_positions = (R @ cloud.positions.T).T.astype(np.float32)
-    q_face        = matrix_to_quaternion(R)
-    new_rotations = quaternion_multiply(q_face, cloud.rotations)
+
+    # Compose slice rotation with each splat's own orientation
+    q_slice       = matrix_to_quaternion(R)
+    new_rotations = quaternion_multiply(q_slice, cloud.rotations)
+
     return SplatCloud(
         count      = cloud.count,
         positions  = new_positions,
@@ -557,11 +472,7 @@ def transform_face(cloud: SplatCloud, face_name: str) -> SplatCloud:
 
 def flip_y(cloud: SplatCloud) -> SplatCloud:
     """
-    Negate the Y axis of all splat positions.
-
-    ml-sharp uses Y-down convention (down = +Y in world space).
-    Standard 3DGS viewers and Unity use Y-up convention.
-    Negating Y converts between them.
+    Negate Y axis: ml-sharp Y-down -> viewer/Unity Y-up convention.
     """
     new_positions = cloud.positions.copy()
     new_positions[:, 1] *= -1.0
@@ -577,14 +488,14 @@ def flip_y(cloud: SplatCloud) -> SplatCloud:
     )
 
 
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------------------------
 # Merge
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------------------------
 
 def merge_clouds(clouds: list[SplatCloud]) -> SplatCloud:
     """Concatenate a list of SplatClouds into one."""
     total = sum(c.count for c in clouds)
-    print(f"  Merging {len(clouds)} faces -> {total:,} total splats")
+    print(f"  Merging {len(clouds)} slices -> {total:,} total splats")
     return SplatCloud(
         count      = total,
         positions  = np.concatenate([c.positions  for c in clouds]),
@@ -601,84 +512,116 @@ def merge_clouds(clouds: list[SplatCloud]) -> SplatCloud:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def stitch_faces(
-    face_plys:   dict[str, str | Path],
-    face_images: dict[str, str | Path],
-    focal_x:     float,
-    focal_y:     float,
-    use_depth_alignment: bool = True,
-    grid_size:           int  = 8,
+def stitch_slices(
+    slices:              list[dict],
+    focal_x:             float,
+    focal_y:             float,
+    pano_width:          int   = None,
+    pano_height:         int   = None,
+    da360_disparity:     np.ndarray = None,
+    use_depth_alignment: bool  = True,
+    grid_size:           int   = 8,
+    fade_start:          float = 0.7,
 ) -> SplatCloud:
     """
-    Stitch 6 ml-sharp face .ply files into a single world-space SplatCloud.
+    Stitch N ml-sharp slice .ply files into a single world-space SplatCloud.
 
     Args:
-        face_plys:           dict face_name -> path to ml-sharp output .ply
-        face_images:         dict face_name -> path to face image (for depth)
-        focal_x:             horizontal focal length used during face extraction
-        focal_y:             vertical focal length used during face extraction
-        use_depth_alignment: whether to run Depth Anything V2 alignment
-                             (disable for faster testing)
+        slices: list of dicts, one per slice, each containing:
+                    ply         - path to ml-sharp output .ply
+                    image       - path to slice image
+                    azimuth_deg - centre azimuth in degrees (from face_extractor)
+        focal_x:             horizontal focal length (from face_extractor)
+        focal_y:             vertical focal length (from face_extractor)
+        pano_width:          original panorama width (needed for DA360 sampling)
+        pano_height:         original panorama height (needed for DA360 sampling)
+        da360_disparity:     (H, W) float32 panoramic disparity from DA360.
+                             If provided, used for globally consistent depth
+                             alignment instead of per-slice Depth Anything V2.
+                             Larger values = closer to camera.
+        use_depth_alignment: enable depth alignment (disable for quick testing)
         grid_size:           NxN grid for depth alignment (default 8)
+        fade_start:          edge fade start distance (default 0.7)
 
     Returns:
-        Merged SplatCloud in world space, Y-up convention, ready for optimiser.
+        Merged SplatCloud in world space, Y-up, ready for optimiser.
     """
-    #quick checker
-    print(f"focal_x={focal_x}, focal_y={focal_y}")
+    transformed         = []
+    original_median_radii = []  # for global scale restore
 
-    expected = set(FACE_ROTATIONS.keys())
-    #if set(face_plys.keys()) != expected:
-    #    raise ValueError(f"Expected faces {expected}, got {set(face_plys.keys())}")
-    #if set(face_images.keys()) != expected:
-    #    raise ValueError(f"face_images must have same keys as face_plys")
+    first_img = Image.open(slices[0]["image"]) 
+    iw, ih = first_img.size #all images should have same size
 
-    transformed = []
-    reference_scale = None  # shared metric anchor across all faces
-
-    for face_name in FACE_ROTATIONS:
-        print(f"\n── Face: {face_name} ──")
+    for i, s in enumerate(slices):
+        az  = s["azimuth_deg"]
+        print(f"\n── Slice {i} (azimuth={az:.1f}°) ──")
 
         # 1. Parse .ply
-        cloud = parse_ply(face_plys[face_name])
+        cloud = parse_ply(s["ply"])
 
-        # 2. Load face image
-        face_img = np.array(Image.open(face_images[face_name]).convert("RGB"))
-        ih, iw   = face_img.shape[:2]
-        print(f"  Image: {iw}×{ih}")
+        # 2. Depth alignment
+        # Since ML-sharp is unaware of the other slices each slice share no consitent size or depth, we use DA360 to mitigate this
+        # Store pre-alignment radius BEFORE any depth scaling.
+        # DA360 shrinks everything to (~0.006x unit) so we record ML-sharps metric space,
+        # and we restore after merging.
+        pre_align_radii = np.linalg.norm(cloud.positions, axis=1)
+        original_median_radii.append(float(np.median(pre_align_radii)))
+        print(f"  Pre-alignment median radius: {original_median_radii[-1]:.4f}")
 
-        # 3. Depth alignment
         if use_depth_alignment:
-            print("  Running Depth Anything V2...")
-            depth_map = predict_depth(face_img)
-            cloud, face_scale = align_splat_depths(
-                cloud, depth_map, focal_x, focal_y, iw, ih, grid_size
-            )
-
-            # Anchor all faces to the same metric scale as the first face.
-            # Depth Anything is only locally consistent - each face gets a
-            # different arbitrary scale. Without this, faces sit at different
-            # radii from the origin (the "cube exploded" effect).
-            if reference_scale is None:
-                reference_scale = face_scale
-                print(f"  Reference scale set: {reference_scale:.4f}")
-            else:
-                match_scale = reference_scale / face_scale
-                print(f"  Cross-face scale correction: {match_scale:.4f} "
-                      f"(face={face_scale:.4f}, ref={reference_scale:.4f})")
-                cloud = SplatCloud(
-                    count      = cloud.count,
-                    positions  = (cloud.positions * match_scale).astype(np.float32),
-                    normals    = cloud.normals,
-                    colors_rgb = cloud.colors_rgb,
-                    f_dc       = cloud.f_dc,
-                    opacities  = cloud.opacities,
-                    scales     = (cloud.scales * match_scale).astype(np.float32),
-                    rotations  = cloud.rotations,
+            if da360_disparity is not None:
+                # DA360 path: globally consistent disparity from panorama.
+                # Sample the panoramic disparity map at this slice's pixel
+                # locations. All slices reference the same map so cross-slice
+                print("  Sampling DA360 disparity for this slice...")
+                depth_map = sample_da360_for_slice(
+                    da360_disparity,
+                    az, focal_x, focal_y,
+                    iw, ih, pano_width, pano_height,
                 )
+                # DA360 returns raw disparity (larger=closer).
+                # We use it directly - align_splat_depths computes:
+                #   scale = ref_depth / splat_radial
+                # For DA360 disparity we instead compute:
+                #   scale = splat_radial / (1/ref_disparity)
+                #         = splat_radial * ref_disparity
+                # which gives the correct scale to map ml-sharp's arbitrary
+                # units to DA360's consistent metric space.
+                # Implement this by passing disparity and flipping the ratio.
+                cloud, _ = align_splat_depths_da360(
+                    cloud, depth_map, focal_x, focal_y, iw, ih, grid_size
+                )
+
+                # Per-slice scale restore, bring each slice back to its own
+                # pre-alignment scale immediately after DA360 alignment.
+                # This makes adjacent slices geometrically consistent because
+                # each slice's depth structure matches its pre-alignment shape
+                # before rotation into world space.
+                # Without this, cross-slice DA360 scale variation (~48% range)
+                # causes duplicate geometry at seams even after global restore.
+                post_align_median = float(np.median(
+                    np.linalg.norm(cloud.positions, axis=1)
+                ))
+                if post_align_median > 1e-8:
+                    per_slice_restore = original_median_radii[-1] / post_align_median
+                    print(f"  Per-slice restore: x{per_slice_restore:.4f} "
+                          f"({post_align_median:.4f} -> {original_median_radii[-1]:.4f})")
+                    cloud = SplatCloud(
+                        count      = cloud.count,
+                        positions  = (cloud.positions * per_slice_restore).astype(np.float32),
+                        normals    = cloud.normals,
+                        colors_rgb = cloud.colors_rgb,
+                        f_dc       = cloud.f_dc,
+                        opacities  = cloud.opacities,
+                        scales     = (cloud.scales * per_slice_restore).astype(np.float32),
+                        rotations  = cloud.rotations,
+                    )
         else:
-            # Simple median normalisation fallback
-            median_z = float(np.median(cloud.positions[:, 2][cloud.positions[:, 2] > 1e-6]))
+            # No depth alignment - simple median normalisation fall back (This is purely for testing and not a viable second option)
+            print(f" DA360 failed to load, basic median normalisation fallback, if this is not testing: check paths and retry")
+            median_z = float(np.median(
+                cloud.positions[:, 2][cloud.positions[:, 2] > 1e-6]
+            ))
             sf = 1.0 / median_z if median_z > 1e-6 else 1.0
             cloud = SplatCloud(
                 count      = cloud.count,
@@ -691,27 +634,51 @@ def stitch_faces(
                 rotations  = cloud.rotations,
             )
             print(f"  Median normalised (scale={sf:.4f})")
-            face_scale = sf
 
-        # 4. Edge fade - attenuate splat opacity near face edges.
-        # Soft fading preserves overlap continuity and blends seams smoothly.
-        # Hard clipping (old Voronoi approach) created cracks and sparse edges.
-        cloud = apply_edge_fade(cloud, focal_x, focal_y, iw, ih, fade_start=0.75)
+        # 3. Hard Voronoi clipping - remove overlap region before rotation.
+        # DA360 alignment makes adjacent slices consistent so hard clipping
+        # doesn't* create depth discontinuities at seams.
+        span_deg = 360.0 / len(slices)
+        cloud = voronoi_clip(cloud, span_deg)
 
-        # 5. Rotate into world space
-        cloud = transform_face(cloud, face_name)
+        # 4. Rotate into world space using azimuth angle
+        cloud = transform_slice(cloud, az)
         print(f"  Rotated into world space")
 
         transformed.append(cloud)
 
-    # 6. Merge all faces
+    # 5. Merge all slices
     print(f"\n── Merging ──")
     merged = merge_clouds(transformed)
 
-    # 7. Flip Y: ml-sharp Y-down -> viewer Y-up
+    # 6. Global scale restore.
+    # DA360 alignment shrinks the scene to metric disparity scale (~0.006).
+    # Restore to the original pre-alignment median radius so the scene
+    # is the same size as ml-sharp originally produced. 
+    # (different to step 3's restore which primary function was uniformity for easier merging, could you do it one step? prolly idk. This works)
+    if original_median_radii:
+        original_scene_median = float(np.median(original_median_radii))
+        current_median = float(np.median(np.linalg.norm(merged.positions, axis=1)))
+        if current_median > 1e-8:
+            global_restore = original_scene_median / current_median
+            print(f"  Global scale restore: x{global_restore:.4f} "
+                  f"({current_median:.4f} -> {original_scene_median:.4f} median radius)")
+            merged = SplatCloud(
+                count      = merged.count,
+                positions  = (merged.positions * global_restore).astype(np.float32),
+                normals    = merged.normals,
+                colors_rgb = merged.colors_rgb,
+                f_dc       = merged.f_dc,
+                opacities  = merged.opacities,
+                scales     = (merged.scales * global_restore).astype(np.float32),
+                rotations  = merged.rotations,
+            )
+
+    # 7. Y-flip: ml-sharp Y-down -> viewer Y-up if we don't do this the scene will appear upside down in most renderers and require manual flipping,
     merged = flip_y(merged)
     print("  Y-axis flipped (Y-down -> Y-up)")
 
+    # Final merged cloud info 
     print(f"\n{'='*52}")
     print(f"Stitched cloud summary")
     print(f"{'='*52}")
@@ -729,23 +696,42 @@ def stitch_faces(
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+# This is mainly for testing you should use RunStitcher.py instead
 
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) < 14:
+    # Read metadata file written by face_extractor.py
+    # Usage: python splat_stitcher.py slices_meta.txt focal_length ply_folder/
+    if len(sys.argv) < 5:
         print(
-            "Usage: python splat_stitcher.py focal_x focal_y \\\n"
-            "  front.ply back.ply right.ply left.ply top.ply bottom.ply \\\n"
-            "  front.jpg back.jpg right.jpg left.jpg top.jpg bottom.jpg"
+            "Usage: python splat_stitcher.py slices_meta.txt focal_x focal_y ply_folder/\n"
+            "  slices_meta.txt - written by face_extractor.py\n"
+            "  focal_x         - horizontal focal length (printed by face_extractor.py)\n"
+            "  focal_y         - vertical focal length (printed by face_extractor.py)\n"
+            "  ply_folder/     - folder containing ml-sharp .ply outputs"
         )
         sys.exit(1)
 
-    focal_x = float(sys.argv[1])
-    focal_y = float(sys.argv[2])
-    face_names = ['front', 'back', 'right', 'left', 'top', 'bottom']
-    plys   = {n: sys.argv[3  + i] for i, n in enumerate(face_names)}
-    images = {n: sys.argv[3+6+i] for i, n in enumerate(face_names)}
+    meta_path  = Path(sys.argv[1])
+    focal_x    = float(sys.argv[2])
+    focal_y    = float(sys.argv[3])
+    ply_folder = Path(sys.argv[4])
 
-    cloud = stitch_faces(plys, images, focal_x, focal_y)
-    print(f"\nDone. {cloud.count:,} splats ready for optimisation.")
+    # Parse metadata file
+    slices = []
+    for line in meta_path.read_text().splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        name, azimuth_deg, img_name = parts[0], float(parts[1]), parts[2]
+        slices.append({
+            "ply":         ply_folder / f"{name}.ply",
+            "image":       meta_path.parent / img_name,
+            "azimuth_deg": azimuth_deg,
+        })
+
+    from splat_exporter import export_ply
+    cloud = stitch_slices(slices, focal_x, focal_y)
+    export_ply(cloud, "stitched_output.ply")
+    print(f"\nDone. {cloud.count:,} splats -> stitched_output.ply")
