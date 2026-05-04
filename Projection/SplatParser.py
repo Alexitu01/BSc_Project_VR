@@ -43,13 +43,13 @@ class SplatCloud:
 
     Every array has N rows where N = number of splats.
 
-    positions   (N, 3)  float32  — world-space x, y, z
-    colors_rgb  (N, 3)  float32  — RGB in [0, 1] decoded from f_dc
-    f_dc        (N, 3)  float32  — raw SH degree-0 coefficients (kept for export)
-    opacities   (N,)    float32  — [0, 1] after sigmoid decode
-    scales      (N, 3)  float32  — real scale after exp() decode
-    rotations   (N, 4)  float32  — normalised quaternion (w, x, y, z)
-    normals     (N, 3)  float32  — optional, zeros if not present in file
+    positions   (N, 3)  float32  - world-space x, y, z
+    colors_rgb  (N, 3)  float32  - RGB in [0, 1] decoded from f_dc
+    f_dc        (N, 3)  float32  - raw SH degree-0 coefficients (kept for export)
+    opacities   (N,)    float32  - [0, 1] after sigmoid decode
+    scales      (N, 3)  float32  - real scale after exp() decode
+    rotations   (N, 4)  float32  - normalised quaternion (w, x, y, z)
+    normals     (N, 3)  float32  - optional, zeros if not present in file
     """
     count:      int
     positions:  np.ndarray
@@ -58,7 +58,7 @@ class SplatCloud:
     opacities:  np.ndarray
     scales:     np.ndarray
     rotations:  np.ndarray
-    # Normals are optional — ml-sharp doesn't output them
+    # Normals are optional - ml-sharp doesn't output them
     # We store zeros so downstream code can always expect this field to exist
     normals:    np.ndarray = field(default=None)
 
@@ -68,7 +68,7 @@ class SplatCloud:
 
 
 # ---------------------------------------------------------------------------
-# Core vertex properties — present in both formats
+# Core vertex properties - present in both formats
 # ---------------------------------------------------------------------------
 
 # These are the properties we always expect to find, in this exact order,
@@ -102,10 +102,10 @@ def _parse_header(f) -> tuple[int, int, list[str]]:
     Read and interpret the ASCII header from an open binary file.
 
     Returns:
-        n_splats      — how many splats are in the file
-        header_bytes  — how many bytes the header occupies
+        n_splats      - how many splats are in the file
+        header_bytes  - how many bytes the header occupies
                         (so we know where binary data starts)
-        vertex_props  — list of property names found in the vertex element
+        vertex_props  - list of property names found in the vertex element
                         (order matches the binary layout)
 
     The header is plain ASCII text that ends with 'end_header'.
@@ -120,7 +120,7 @@ def _parse_header(f) -> tuple[int, int, list[str]]:
 
     # Basic format checks
     if header_lines[0] != "ply":
-        raise ValueError("Not a valid .ply file — first line must be 'ply'")
+        raise ValueError("Not a valid .ply file - first line must be 'ply'")
     if "binary_little_endian" not in header_lines[1]:
         raise ValueError(
             f"Expected binary_little_endian encoding, got: {header_lines[1]}\n"
@@ -141,7 +141,7 @@ def _parse_header(f) -> tuple[int, int, list[str]]:
             n_splats = int(line.split()[-1])
             current_element = "vertex"
         elif line.startswith("element"):
-            # Any other element (extrinsic, intrinsic, etc.) — stop collecting
+            # Any other element (extrinsic, intrinsic, etc.) - stop collecting
             current_element = line.split()[1]
         elif line.startswith("property") and current_element == "vertex":
             # "property float x" → last word is the name
@@ -158,9 +158,9 @@ def _parse_header(f) -> tuple[int, int, list[str]]:
     return n_splats, header_bytes, vertex_props
 
 
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # Main parser
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 
 def parse_ply(path: str | Path) -> SplatCloud:
     """
@@ -168,7 +168,7 @@ def parse_ply(path: str | Path) -> SplatCloud:
 
     Strategy: read the entire binary vertex block in one numpy call,
     then slice out columns by name. This is much faster than row-by-row
-    parsing — for an 85 MB file the difference is seconds vs minutes.
+    parsing - for an 85 MB file the difference is seconds vs minutes.
 
     Works with both the original format (has normals) and ml-sharp format
     (no normals, has extra metadata elements we silently skip).
@@ -263,7 +263,7 @@ def parse_ply(path: str | Path) -> SplatCloud:
     #
     # np.linalg.norm with axis=1 computes the length of each row (each quaternion).
     # keepdims=True keeps the shape (N, 1) so we can divide (N, 4) by (N, 1)
-    # and numpy broadcasts correctly — dividing each row by its own length.
+    # and numpy broadcasts correctly - dividing each row by its own length.
     rotations = raw[
         :, [col["rot_0"], col["rot_1"], col["rot_2"], col["rot_3"]]
     ].copy()
@@ -272,7 +272,7 @@ def parse_ply(path: str | Path) -> SplatCloud:
     rotations /= np.where(norms > 0, norms, 1.0)
 
     # --- Decoded RGB for diagnostics (not used in export) ---
-    # colour = 0.5 + SH_C0 * f_dc  — this is the standard 3DGS colour decode
+    # colour = 0.5 + SH_C0 * f_dc  - this is the standard 3DGS colour decode
     colors_rgb = np.clip(0.5 + SH_C0 * f_dc, 0.0, 1.0).astype(np.float32)
 
     cloud = SplatCloud(
@@ -294,6 +294,7 @@ def parse_ply(path: str | Path) -> SplatCloud:
 # Diagnostics
 # ---------------------------------------------------------------------------
 
+# PLEASE JUST WORK
 def _print_summary(cloud: SplatCloud) -> None:
     print("=" * 52)
     print("Splat cloud summary")
@@ -323,9 +324,7 @@ def _print_summary(cloud: SplatCloud) -> None:
     print("=" * 52)
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+# Main caller, used for debugging
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
