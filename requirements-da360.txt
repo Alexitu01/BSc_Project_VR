@@ -1,0 +1,15 @@
+# requirements-da360.txt
+# Install in the 'da360' conda environment
+# Used by: RunStitcher.py, Da360Predictor.py
+#
+# Install PyTorch first (not listed here as it requires --index-url):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+# Then install these:
+
+numpy
+pillow
+scipy
+timm
+einops
+opencv-python
