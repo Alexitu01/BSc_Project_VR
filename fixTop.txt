@@ -1,0 +1,13 @@
+The image you have received is a 'TOP' of a cubemap.
+Your focus should be to analyze the image and locate the point where a phenomenom called
+"pole distortion" is present.
+Your goal is to remove and smooth out this pole distortion so it is removed and then make it blend in with it's surroundings instead of looking like a bad distortion in the image.
+
+IMPORTANT: You should NOT edit or change any elements, surroundings or objects around the edges of the image.
+Your only focus is the point exactly or close to the middle/center of the image where the pole distortion happens.
+Try your best to remove it, and make the center of the image where the pole distortion is, look better and more blended in with the environment.
+
+Remember: Dont change overall elements of the image, 90% of the image should be as it is - only focus on the distortion in the center.
+AND DONT USE ANYTHING ELSE OTHER THAN THE VERY CLOSE PROXIMITY OF THE DISTORTION TO BLEND (DONT USE ELEMENTS FAR AWAY FROM THE DISTORTION TO BLEND OR COVER AND DONT CREATE NEW ELEMENTS TO COVER, JUST USE BLENDING IN CLOSE PROXIMITY TO THE DISTORTION)
+
+Final note: Make the blending look good and seamless. 

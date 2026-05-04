@@ -200,10 +200,9 @@ def makeCubeMap(image_path):
     output_dir.mkdir(exist_ok=True)
     facePngs={}
     for name, face in faces.items():
-        if name == "top" or name == "bottom":
-            Image.fromarray(face).save(output_dir / f"{name}.png")
-            facePngs[name] = str(f"faces/{name}.png")
-            print(f"  Saved: faces/{name}.png")
+        Image.fromarray(face).save(output_dir / f"{name}.png")
+        facePngs[name] = str(f"faces/{name}.png")
+        print(f"  Saved: faces/{name}.png")
     
     
     return facePngs
