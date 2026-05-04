@@ -1,6 +1,7 @@
 fastapi
+uvicorn
+runpod
 requests
 google-genai
 pillow
-uvicorn
-scipy
+groq
