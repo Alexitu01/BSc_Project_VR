@@ -10,8 +10,8 @@ from SplatExporter import export_ply
 # ---------------------------------------------------------------------------
 META_PATH     = Path(r'./slices/slices_meta.txt')
 PLY_FOLDER    = Path(r'./ml-sharp/gaussians')
-DA360_ROOT    = r'.\DA360' #TODO: ensure this points to the root of the da360 clone on the container as well
-DA360_MODEL   = r'.\DA360\checkpoints\DA360_small.pth' # Using the small one for testing, but we can download the big one from DA360 google drive
+DA360_ROOT    = r'./DA360' #TODO: ensure this points to the root of the da360 clone on the container as well
+DA360_MODEL   = r'./DA360/checkpoints/DA360_small.pth' # Using the small one for testing, but we can download the big one from DA360 google drive
 
 # ---------------------------------------------------------------------------
 # 1. Load slice metadata
