@@ -15,6 +15,7 @@ import time
 import base64
 
 
+
 googleClient = genai.Client()
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"),)
 serverlessAPI = os.environ.get("SERVERLESS_API")
@@ -53,7 +54,7 @@ async def read_item_via_request_body(request: Request):
     elif "imagePath" in postRequest:
         return generatePly(postRequest["imagePath"])
     else:
-        return {"response": "Post request not supported", "error": 1}
+        return {"message": "Post request not supported", "error": 1}
     
 
 
@@ -114,7 +115,7 @@ def generateImages(promptForAi):
             ),
         )
     except:
-        return {"response": "An issue emerged from trying to generate the image \n The problem can stem from: \n 1. Quota has been met (wait 1m between every generation) \n 2. There was an issue with authorization ", "error": 1 }
+        return {"message": "An issue emerged from trying to generate the image \n The problem can stem from: \n 1. Quota has been met (wait 1m between every generation) \n 2. There was an issue with authorization ", "error": 1 }
         
     print("Finished generating")
     if response.candidates != None and response.candidates[0].content != None and response.candidates[0].content.parts != None: #Necessary checks or else compiler cries
@@ -130,7 +131,7 @@ def generateImages(promptForAi):
                     print("*****************************************\n")
                     print("THIS IS THE PATH", imagePath)
                     print("*****************************************")
-                    return {"response": imagePath, "error": 0}                
-    return {"response": "There was an issue with the generated content, try again later", "error": 1}
+                    return {"message": imagePath, "error": 0}                
+    return {"message": "There was an issue with the generated content, try again later", "error": 1}
 
 # start application with: uvicorn App:app --reload

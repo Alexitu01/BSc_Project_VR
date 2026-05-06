@@ -49,13 +49,13 @@ async function create3D() {
   })
     .then((response) => {
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP error! status: ${response.message}`);
       } else {
         return response.json();
       }
     })
     .then((json) => {
-      console.log(json.response);
+      console.log(json.download_url);
     });
 }
 
@@ -129,11 +129,11 @@ async function Generate() {
       if (imageJson.error == 1) {
         //See if there was an error with the google api call
         stopLoading(button, spinner);
-        alert(imageJson.response);
+        alert(imageJson.message);
         return;
       } else {
         console.log("Response received");
-        let imagePath = imageJson.response; //Get the path to the saved image, that gemini created
+        let imagePath = imageJson.message; //Get the path to the saved image, that gemini created
         var image = document.createElement("img");
         image.src = imagePath; //After image is created, the path of the image that needs to be shown is set to the html image element
         console.log(imagePath);
