@@ -13,7 +13,7 @@ import torch
 # ── Config ──────────────────────────────────────────────────────────────────
 SLICES_DIR  = Path("slices") #Check these paths are still correct on the container
 OUTPUT_DIR  = Path("ml-sharp") / "gaussians"
-CHECKPOINT  = Path("ml-sharp") / "sharp.pt"
+CHECKPOINT  = Path("ml-sharp") / "sharp_2572gikvuh.pt"
 META_FILE   = SLICES_DIR / "slices_meta.txt"
 # ────────────────────────────────────────────────────────────────────────────
 

@@ -40,6 +40,18 @@ RUN pip install --no-cache-dir runpod && \
 
 RUN git submodule update --init --recursive
 
+WORKDIR /workspace/Projection/ml-sharp
+
+RUN wget https://ml-site.cdn-apple.com/models/sharp/sharp_2572gikvuh.pt
+
+WORKDIR /workspace/Projection/DA360
+
+RUN mkdir -p checkpoints && \
+    pip install gdown && \
+    bash scripts/download_models.sh
+
+WORKDIR /workspace
+
 RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
     bash /tmp/miniconda.sh -b -p /opt/conda && \
     rm /tmp/miniconda.sh
