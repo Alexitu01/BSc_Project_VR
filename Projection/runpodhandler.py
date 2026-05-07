@@ -1,5 +1,6 @@
 import runpod
 from PIL import Image
+from google.auth.transport.requests import Request
 from datetime import datetime
 import torch
 import os
@@ -11,6 +12,7 @@ import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
 import FaceExtractor
 
 
@@ -25,8 +27,6 @@ def ensure_cacheDirectories():
  
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
-
-# Initialise SPAG4D once at startup
 
 async def handler(event):
     ensure_cacheDirectories()
@@ -60,25 +60,28 @@ async def handler(event):
         
         return upload_result
     except Exception as e:
+        if os.path.exists("stitched_output.ply"):
+            os.remove("stitched_output.ply")
+            
+        if os.path.exists(filename):
+            os.remove(filename)
+        
         return {"message": str(e), "error": 1}
 
 def get_drive_service():
-    # os.environ["..."] gets the service account credentials in base64 format
-    # b64decode() decoedes the base64 into bytes
-    # decode("utf-8") turns the bytes into a Python str containing the credentials in JSON TEXT
-    # json.loads() turns the 'str' into a dict object
-    sa_info = json.loads(base64.b64decode(os.environ["GDRIVE_SA_JSON_B64"]).decode("utf-8"))
+    creds = Credentials(
+        token=None,
+        refresh_token=os.environ["GDRIVE_REFRESH_TOKEN"],
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=os.environ["GDRIVE_CLIENT_ID"],
+        client_secret=os.environ["GDRIVE_CLIENT_SECRET"],
+        scopes=["https://www.googleapis.com/auth/drive"],
+        )
     
-    # This defines the credentials in the correct format that the "build()" method expects:
-    # It uses the module service_account, which has the class Credentials, which contains the 
-    # method 'from_service_account_info' which according to the docs: "Creates a Credentials instance from parsed service account info"
-    creds = service_account.Credentials.from_service_account_info(
-        sa_info,
-        #Scopes defines what the credentials can give access to - in this 'drive' gives access to everything.
-        scopes=["https://www.googleapis.com/auth/drive"]
-    )
+    creds.refresh(Request())
+
     #This constructs the resource that allows interaction with the google api.
-    return build("drive", "v3", credentials=creds, cache_discovery=False)
+    return build("drive", "v3", credentials=creds, cache_discovery=False,)
 
 
 def upload_to_drive(filename):
