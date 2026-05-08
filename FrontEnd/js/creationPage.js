@@ -94,6 +94,10 @@ async function create3D() {
       });
       
       const status_json = await response.json();
+      if(status_json.error == 1){
+        waitingText.textContent = "An unexpected error happened: " + status_json.status
+        return
+      }
       if(status_json.status == "COMPLETED"){ //If completed end
         console.log("YAY");
         output = status_json.output;
@@ -106,6 +110,7 @@ async function create3D() {
 
     waitingText.textContent = "Download is available"
     downlaodButton.classList.remove("inactive");
+    downlaodButton.textContent = "Download"
     downlaodButton.onclick = () => openDownload(output.download_url)
     waitingSpinner.style.display = "none";
 

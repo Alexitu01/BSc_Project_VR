@@ -86,6 +86,9 @@ def getStatus(job_id):
         jobStatus.pop(job_id)
         
         return{"status": "COMPLETED", "output": output, "error": 0}
+    
+    elif status in {"FAILED", "TIMED_OUT", "CANCELLED" }:   
+        return{"status": status, "error": 1}
 
     return {"status": status, "error": 0}
 
