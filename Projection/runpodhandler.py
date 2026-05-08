@@ -6,9 +6,6 @@ import torch
 import os
 from io import BytesIO
 import base64
-import subprocess
-import sys
-import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -93,7 +90,8 @@ def upload_to_drive(filename):
         
         #Json format of the file's name, and what folder to put it in.
         #(Folder is put in an array, because 'parents' infers multiple folders)
-        meta_info = {"name": filename, "parents": [folder_id]}
+        newFileName = str(datetime.now().timestamp()) + ".ply"
+        meta_info = {"name": newFileName, "parents": [folder_id]}
         
         #This tells whatever gets this object, to wrap the bytes of the file from the filename
         # in an upload stream object so the file is sent in chunks instead of one big and heavy chunk.

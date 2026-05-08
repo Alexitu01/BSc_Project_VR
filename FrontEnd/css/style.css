@@ -345,3 +345,58 @@ button:hover{
     height: 25px;
 }
 
+.waitingWindow{
+    position:absolute;
+    display:flex;
+    justify-content:center;
+    align-items: center;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40%;
+    height: 40%;
+    border-radius: 10px;
+    background-color: rgba(20, 2, 55, 0.91);
+    z-index: 10;
+}
+
+.waitingWindow button{
+    position: absolute;
+    display:flex;
+    justify-content:center;
+    align-items: center;
+    right: 10px;
+    bottom: 10px;
+    width: 200px;
+    height: 50px;
+    margin-top: 20px;
+    font-size: 18px;
+}
+
+.waitingWindow .spinnerWait{
+    position: abosolute;
+    display:none;
+    width: 50px;
+    height: 50px;
+    border: 5px solid rgba(255, 255, 255, 0.3);
+    border-top: 5px solid rgba(207, 183, 255, 0.964);
+    border-radius: 50%;
+    padding: 0px;
+    margin: 0px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    animation: spin 1s linear infinite;
+}
+
+.waitingWindow .status {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    color:rgb(255, 255, 255);
+    font-family:'Times New Roman', Times, serif;
+    margin: 10px;
+    text-align:center;
+    font-size: 30px;
+}

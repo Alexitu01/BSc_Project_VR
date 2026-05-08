@@ -36,14 +36,39 @@ async function create3D() {
     alert("Please choose an image");
     return;
   }
+
+  job_id = null
+
   const src = chosenImage.getElementsByTagName("img")[0].getAttribute("src");
   imagePathJson = { imagePath: src };
   console.log(imagePathJson);
   time = src.split("/Images/").pop()
-  if(!confirm("Are you sure you want to generate from image: " + "\n" + time)){
+  /*if(!confirm("Are you sure you want to generate from image: " + "\n" + time)){
     return;
-  }
-  const response = await fetch("CreationPage", {
+  }*/
+
+  let waitingWindow = document.createElement("div");
+  let waitingSpinner = document.createElement("div");
+  let waitingText = document.createElement("p");
+  let downlaodButton = document.createElement("button");
+
+  waitingWindow.classList.add("waitingWindow");
+  waitingSpinner.classList.add("spinnerWait");
+  downlaodButton.classList.add("inactive");
+  waitingText.classList.add("status")
+
+  waitingWindow.appendChild(waitingText);
+  waitingWindow.appendChild(waitingSpinner);
+  waitingWindow.appendChild(downlaodButton);
+
+  waitingText.textContent = "Current Status: ";
+  waitingText.style.color = "white";
+  downlaodButton.textContent= "Waiting for Download";
+  waitingSpinner.style.display = "block";
+
+  document.body.appendChild(waitingWindow)
+
+  const response = await fetch("CreationPage", { //Calls generation
     method: "POST",
     body: JSON.stringify(imagePathJson),
   })
@@ -55,9 +80,43 @@ async function create3D() {
       }
     })
     .then((json) => {
-      console.log(json.download_url);
+      job_id = {"jobId": json.jobId}
     });
+
+    var output = null;
+    var stop = false;
+    //Start while-loop to checking status and updating the waiting window.
+    while (!stop) {
+      await new Promise(r => setTimeout(r, 10000));
+      const response = await fetch("CreationPage", {
+        method: "POST",
+        body: JSON.stringify(job_id), //give the job_id to the getStatus method
+      });
+      
+      const status_json = await response.json();
+      if(status_json.status == "COMPLETED"){ //If completed end
+        console.log("YAY");
+        output = status_json.output;
+        stop = true;
+      } else{ //If still in process sleep and continue
+        console.log("Update status window");
+        waitingText.textContent = "Current Status: " + status_json.status;
+      }
+    }
+
+    waitingText.textContent = "Download is available"
+    downlaodButton.classList.remove("inactive");
+    downlaodButton.onclick = () => openDownload(output.download_url)
+    waitingSpinner.style.display = "none";
+
+
 }
+
+function openDownload(download_url){
+  window.location.replace(download_url)
+}
+
+
 
 //Method for calling the optimization logic in app.py
 async function Optimize() {
@@ -72,6 +131,7 @@ async function Optimize() {
   loading(button, spinner);
 
   let text = { prompt: document.getElementById("input").value }; //Put prompt into json format
+  
   const response = await fetch("/CreationPage", {
     method: "POST",
     body: JSON.stringify(text),
@@ -94,6 +154,7 @@ async function Optimize() {
     });
   stopLoading(button, spinner);
 }
+
 
 //Method for calling generation method in app.py.
 async function Generate() {
