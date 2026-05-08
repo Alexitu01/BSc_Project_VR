@@ -63,11 +63,11 @@ async function create3D() {
 
   waitingText.textContent = "Current Status: ";
   waitingText.style.color = "white";
-  downlaodButton.textContent= "Waiting for Download";
+  downlaodButton.textContent= "Please wait...";
   waitingSpinner.style.display = "block";
 
   document.body.appendChild(waitingWindow)
-
+  /*
   const response = await fetch("CreationPage", { //Calls generation
     method: "POST",
     body: JSON.stringify(imagePathJson),
@@ -118,7 +118,7 @@ async function create3D() {
 }
 
 function openDownload(download_url){
-  window.location.replace(download_url)
+  window.open(download_url);*/
 }
 
 
