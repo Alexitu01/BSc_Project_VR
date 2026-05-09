@@ -4,4 +4,7 @@ runpod
 requests
 google-genai
 pillow
+numpy
+scipy
 groq
+google-api-python-client

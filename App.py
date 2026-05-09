@@ -15,9 +15,11 @@ import time
 import base64
 
 
+jobStatus = {}
 googleClient = genai.Client()
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"),)
 serverlessAPI = os.environ.get("SERVERLESS_API")
+endpoint = runpod.Endpoint("aamisvz3itx91m", serverlessAPI)
 
 with open('instruction.txt', 'r') as file:
     imageSpecs = file.read().replace('\n', '')
@@ -52,8 +54,10 @@ async def read_item_via_request_body(request: Request):
         return generateImages(postRequest["imagePrompt"])
     elif "imagePath" in postRequest:
         return generatePly(postRequest["imagePath"])
+    elif "jobId" in postRequest:
+        return getStatus(postRequest["jobId"])
     else:
-        return {"response": "Post request not supported", "error": 1}
+        return {"message": "Post request not supported", "error": 1}
     
 
 
@@ -64,22 +68,28 @@ def generatePly(imagePath):
 
     data = {"image": encoded_string}
 
-    endpoint = runpod.Endpoint("aamisvz3itx91m", serverlessAPI)
-
     run_request = endpoint.run(data)
-
-    while True:
-        status = run_request.status()
-        print(status)
-        
-        if status == "COMPLETED":
-            break
-        if status in {"FAILED", "CANCELLED", "TIMED_OUT"}:
-            raise RuntimeError("Job ended with status: " + status)
-        time.sleep(30)
+    job_id = str(run_request.job_id)
     
-    return run_request.output() 
+    jobStatus[job_id] = run_request
+    
+    return {"status": "STARTED", "jobId": job_id, "error": 0}
 
+
+
+def getStatus(job_id):
+    run_request = jobStatus[job_id]
+    status = run_request.status()
+
+    if status == "COMPLETED":
+        output = run_request.output()
+        jobStatus.pop(job_id)
+        return{"status": "COMPLETED", "output": output, "error": 0}
+    
+    elif status in {"FAILED", "TIMED_OUT", "CANCELLED" }:   
+        return{"status": status, "error": 1}
+
+    return {"status": status, "error": 0}
 
 def generatePrompt(promptForAi):
     print(promptForAi)
@@ -114,7 +124,7 @@ def generateImages(promptForAi):
             ),
         )
     except:
-        return {"response": "An issue emerged from trying to generate the image \n The problem can stem from: \n 1. Quota has been met (wait 1m between every generation) \n 2. There was an issue with authorization ", "error": 1 }
+        return {"message": "An issue emerged from trying to generate the image \n The problem can stem from: \n 1. Quota has been met (wait 1m between every generation) \n 2. There was an issue with authorization ", "error": 1 }
         
     print("Finished generating")
     if response.candidates != None and response.candidates[0].content != None and response.candidates[0].content.parts != None: #Necessary checks or else compiler cries
@@ -130,7 +140,7 @@ def generateImages(promptForAi):
                     print("*****************************************\n")
                     print("THIS IS THE PATH", imagePath)
                     print("*****************************************")
-                    return {"response": imagePath, "error": 0}                
-    return {"response": "There was an issue with the generated content, try again later", "error": 1}
+                    return {"message": imagePath, "error": 0}                
+    return {"message": "There was an issue with the generated content, try again later", "error": 1}
 
 # start application with: uvicorn App:app --reload

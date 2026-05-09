@@ -23,10 +23,12 @@ Dependencies:
 
 import argparse
 import math
+from typing import Optional
 import numpy as np
 from pathlib import Path
 from PIL import Image
 from scipy.ndimage import map_coordinates
+import subprocess
 
 
 
@@ -122,7 +124,7 @@ def build_slice_layout(
     panorama_height: int,
     n_slices:        int   = 6,
     overlap_degrees: float = 8.0, #8 seems to give good results
-    face_size:       int   = None,
+    face_size:       Optional[int]   = None,
 ) -> tuple[list[dict], float, float]:
     """
     Compute extraction parameters for N evenly-spaced horizon slices.
@@ -180,7 +182,7 @@ def extract_all_slices(
     pano:            np.ndarray,
     n_slices:        int   = 6,
     overlap_degrees: float = 8.0,
-    face_size:       int   = None,
+    face_size:       Optional[int]   = None,
 ) -> tuple[list[dict], float]:
     """
     Extract all perspective slices from an equirectangular panorama. -> just calls the two previous methods and does a lot of debug printing
@@ -244,7 +246,7 @@ def extract_all_slices(
 
 
 # ---------------------------------------------------------------------------
-# Entry point 
+# Entry point for extracting via CLI
 # ---------------------------------------------------------------------------
 
 def Extract():
@@ -293,5 +295,45 @@ def Extract():
     print(f"\nfocal_x={focal_px:.2f}, focal_y={focal_y:.2f}  <- pass both to stitch_faces()")
 
 
-if __name__ == "__main__":
-    Extract()
+def createPly(panoramaFile):
+    try:
+        pano = np.array(Image.open(panoramaFile).convert("RGB"))
+        print(f"Loaded: {panoramaFile}  ({pano.shape[1]}×{pano.shape[0]})\n")
+
+        slices, focal_px, focal_y = extract_all_slices(
+            pano,
+            n_slices=6,
+            overlap_degrees=8,
+            face_size=None,
+        )
+
+        out = Path("./slices/")
+        out.mkdir(parents=True, exist_ok=True)
+
+        # Save a metadata file alongside the images so the stitcher knows
+        # the azimuth and focal length for each slice
+        slices, focal_px, focal_y = slices, focal_px, focal_y
+        meta_lines = [
+            f"# Slice metadata - pass these values to stitch_faces()",
+            f"# focal_x = {focal_px:.4f}",
+            f"# focal_y = {focal_y:.4f}",
+            f"# Format: name, azimuth_deg, image_path",
+        ]
+
+        for s in slices:
+            path = out / f"{s['name']}.png"
+            Image.fromarray(s["image"]).save(path)
+            print(f"  Saved: {path}  (azimuth={s['azimuth_deg']:.1f}°)")
+            meta_lines.append(f"{s['name']}, {s['azimuth_deg']:.4f}, {path.name}")
+
+        meta_path = out / "slices_meta.txt"
+        meta_path.write_text("\n".join(meta_lines))
+        print(f"\n  Metadata saved: {meta_path}")
+        print(f"\nfocal_x={focal_px:.2f}, focal_y={focal_y:.2f}  <- pass both to stitch_faces()")
+
+        subprocess.run(["bash", "./activate_sharp.sh"], check=True)
+        subprocess.run(["bash", "./activate_da360.sh", panoramaFile], check=True)
+        
+        return {"message": "success", "error": 0}
+    except Exception as e:
+        return {"message": str(e), "error": 1}
