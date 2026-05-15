@@ -111,13 +111,14 @@ async function create3D() {
     waitingText.textContent = "Download is available"
     downlaodButton.classList.remove("inactive");
     downlaodButton.textContent = "Download"
-    downlaodButton.onclick = () => openDownload(output.download_url)
+    downlaodButton.onclick = () => openDownload(output.download_url, waitingWindow)
     waitingSpinner.style.display = "none";
 
 
 }
 
-function openDownload(download_url){
+function openDownload(download_url, waitingWindow){
+  document.body.removeChild(waitingWindow);
   window.open(download_url);
 }
 
